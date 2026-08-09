@@ -49,6 +49,8 @@ python3 -m racedna fetch-pf --track "Belmont Park" --date 2026-08-01 --import
 
 Files land in `data/inbox/pf/` and are imported into `pf_sectionals` / `pf_benchmarks`. The tipper uses finish/L600/L200 benchmark lengths when present.
 
+If you get HTTP 403 on these endpoints, the key is valid for Starter/Pro (form/results/ratings) but **not** Modeller. Upgrade at [puntingform.com.au/products/modeller](https://puntingform.com.au/products/modeller), then refresh `PUNTINGFORM_API_KEY`.
+
 ### Sectional screenshots (fallback)
 
 ```bash

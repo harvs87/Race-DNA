@@ -68,7 +68,27 @@ def _http_get(
             return resp.status, raw.decode(charset, errors="replace"), ctype
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise PfApiError(f"PF API HTTP {exc.code} for {url}: {body[:500]}") from exc
+        # Redact apiKey from the URL in error messages
+        safe_url = url
+        if "apiKey=" in safe_url:
+            parsed = urllib.parse.urlparse(safe_url)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "apiKey" in qs:
+                qs["apiKey"] = ["***"]
+            safe_url = urllib.parse.urlunparse(
+                parsed._replace(query=urllib.parse.urlencode({k: v[0] for k, v in qs.items()}))
+            )
+        hint = ""
+        if exc.code == 403 and (
+            "MeetingSectionals" in url or "MeetingBenchmarks" in url
+        ):
+            hint = (
+                " Sectionals/benchmarks need a Modeller or commercial PF subscription; "
+                "Starter/Pro keys return 403 on these endpoints."
+            )
+        elif exc.code == 403:
+            hint = " Check that this API key belongs to a plan that includes this endpoint."
+        raise PfApiError(f"PF API HTTP {exc.code} for {safe_url}: {body[:500]}{hint}") from exc
     except urllib.error.URLError as exc:
         raise PfApiError(f"PF API network error for {url}: {exc.reason}") from exc
 
