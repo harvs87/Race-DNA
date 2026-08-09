@@ -9,10 +9,25 @@ export function RunnerCard({ runner }: Props) {
     <li className={runner.rank === 1 ? "runner top" : "runner"}>
       <div className="runner-top">
         <div className="runner-id">
-          <span className="rank">{runner.rank}</span>
+          <span className="tab-number" title="TAB number">
+            {runner.tabNumber}
+          </span>
           <div>
-            <span className="runner-name">{runner.name}</span>
+            <span className="runner-name">
+              <span className="rank-inline">#{runner.rank}</span> {runner.name}
+            </span>
             <span className="runner-verdict">{runner.verdict}</span>
+            <span className="runner-meta-line">
+              {runner.winOdds !== undefined && (
+                <span className="odds-chip">
+                  Win {runner.winOdds.toFixed(2)}
+                  {runner.placeOdds !== undefined ? ` / Plc ${runner.placeOdds.toFixed(2)}` : ""}
+                </span>
+              )}
+              {runner.finishPosition !== undefined && (
+                <span className="result-chip">Finished {runner.finishPosition}</span>
+              )}
+            </span>
           </div>
         </div>
         <div className="runner-scores">

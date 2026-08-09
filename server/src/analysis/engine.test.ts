@@ -28,3 +28,11 @@ test("ranks are strictly ordered by DNA score", () => {
     assert.equal(analysis.runners[i].rank, i + 1);
   }
 });
+
+test("analysis exposes TAB numbers including double digits", () => {
+  const race = getRaceById("ascot-2-40");
+  assert.ok(race);
+  const analysis = analyzeRace(race);
+  const tabs = analysis.runners.map((runner) => runner.tabNumber).sort((a, b) => a - b);
+  assert.deepEqual(tabs, [1, 2, 3, 10, 13]);
+});

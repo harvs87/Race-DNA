@@ -1,15 +1,20 @@
 import type { Race } from "../analysis/types.js";
 
-export const races: Race[] = [
+/** Seed races used when no meeting CSV has been imported yet. */
+export const seedRaces: Race[] = [
   {
     id: "ascot-2-40",
     name: "Ascot Champion Stakes",
     course: "Ascot",
+    date: "2026-08-09",
+    raceNumber: 1,
     distanceFurlongs: 10,
+    distanceMeters: 2012,
     going: "good",
     runners: [
       {
         id: "midnight-runner",
+        tabNumber: 1,
         name: "Midnight Runner",
         recentForm: [1, 2, 1, 3],
         speedFigure: 112,
@@ -22,6 +27,7 @@ export const races: Race[] = [
       },
       {
         id: "silver-comet",
+        tabNumber: 2,
         name: "Silver Comet",
         recentForm: [2, 1, 4, 2],
         speedFigure: 108,
@@ -34,6 +40,7 @@ export const races: Race[] = [
       },
       {
         id: "desert-oath",
+        tabNumber: 3,
         name: "Desert Oath",
         recentForm: [3, 3, 1, 5],
         speedFigure: 104,
@@ -46,6 +53,7 @@ export const races: Race[] = [
       },
       {
         id: "harbour-light",
+        tabNumber: 10,
         name: "Harbour Light",
         recentForm: [5, 4, 6, 2],
         speedFigure: 99,
@@ -58,6 +66,7 @@ export const races: Race[] = [
       },
       {
         id: "cinnamon-sky",
+        tabNumber: 13,
         name: "Cinnamon Sky",
         recentForm: [1, 6, 3, 1],
         speedFigure: 101,
@@ -74,11 +83,15 @@ export const races: Race[] = [
     id: "york-3-15",
     name: "York Ebor Handicap",
     course: "York",
+    date: "2026-08-09",
+    raceNumber: 2,
     distanceFurlongs: 14,
+    distanceMeters: 2816,
     going: "soft",
     runners: [
       {
         id: "northern-quest",
+        tabNumber: 1,
         name: "Northern Quest",
         recentForm: [1, 1, 2, 1],
         speedFigure: 106,
@@ -91,6 +104,7 @@ export const races: Race[] = [
       },
       {
         id: "gale-force",
+        tabNumber: 4,
         name: "Gale Force",
         recentForm: [2, 3, 1, 4],
         speedFigure: 103,
@@ -103,6 +117,7 @@ export const races: Race[] = [
       },
       {
         id: "amber-valley",
+        tabNumber: 10,
         name: "Amber Valley",
         recentForm: [4, 2, 5, 3],
         speedFigure: 100,
@@ -115,6 +130,7 @@ export const races: Race[] = [
       },
       {
         id: "stone-harbour",
+        tabNumber: 13,
         name: "Stone Harbour",
         recentForm: [3, 1, 3, 2],
         speedFigure: 98,
@@ -129,6 +145,9 @@ export const races: Race[] = [
   },
 ];
 
+/** @deprecated Prefer store helpers; retained for existing tests. */
+export const races = seedRaces;
+
 export function getRaceById(id: string): Race | undefined {
-  return races.find((race) => race.id === id);
+  return seedRaces.find((race) => race.id === id);
 }

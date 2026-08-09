@@ -1,38 +1,67 @@
-import { useEffect, useMemo, useState } from "react";
-import { fetchAnalysis, fetchRaces } from "./api";
-import { RunnerCard } from "./components/RunnerCard";
-import type { RaceAnalysis, RaceSummary } from "./types";
+import { useEffect, useState } from "react";
+import {
+  fetchAnalysis,
+  fetchDashboard,
+  fetchRaces,
+  importMeetingCsv,
+  importOddsCsv,
+  importResultsCsv,
+} from "./api";
+import { SidebarNav } from "./components/SidebarNav";
+import type { AppView, DashboardSummary, RaceAnalysis, RaceSummary } from "./types";
+import { DashboardView } from "./views/DashboardView";
+import { ImportView } from "./views/ImportView";
+import { RaceDnaView } from "./views/RaceDnaView";
 
 export function App() {
+  const [view, setView] = useState<AppView>("dashboard");
   const [races, setRaces] = useState<RaceSummary[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<RaceAnalysis | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loadingRaces, setLoadingRaces] = useState(true);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  async function refreshLists(preferredRaceId?: string | null) {
+    setLoadingRaces(true);
+    setError(null);
+    try {
+      const [raceData, dashData] = await Promise.all([fetchRaces(), fetchDashboard()]);
+      setRaces(raceData);
+      setDashboard(dashData);
+      setSelectedId((current) => {
+        if (preferredRaceId && raceData.some((race) => race.id === preferredRaceId)) {
+          return preferredRaceId;
+        }
+        if (current && raceData.some((race) => race.id === current)) return current;
+        return raceData[0]?.id ?? null;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load races");
+    } finally {
+      setLoadingRaces(false);
+    }
+  }
+
   useEffect(() => {
-    fetchRaces()
-      .then((data) => {
-        setRaces(data);
-        setSelectedId(data[0]?.id ?? null);
-      })
-      .catch((err: Error) => setError(err.message));
+    void refreshLists();
   }, []);
 
   useEffect(() => {
-    if (!selectedId) return;
-    setLoading(true);
+    if (!selectedId || view !== "race-dna") return;
+    setLoadingAnalysis(true);
     setError(null);
     fetchAnalysis(selectedId)
       .then(setAnalysis)
       .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [selectedId]);
+      .finally(() => setLoadingAnalysis(false));
+  }, [selectedId, view, races]);
 
-  const topPick = useMemo(
-    () => analysis?.runners.find((runner) => runner.rank === 1) ?? null,
-    [analysis],
-  );
+  function openRace(raceId: string) {
+    setSelectedId(raceId);
+    setView("race-dna");
+  }
 
   return (
     <div className="app">
@@ -46,56 +75,64 @@ export function App() {
         </p>
       </header>
 
-      <div className="layout">
-        <aside className="races">
-          <h2>Race card</h2>
-          <ul>
-            {races.map((race) => (
-              <li key={race.id}>
-                <button
-                  type="button"
-                  className={race.id === selectedId ? "race-btn active" : "race-btn"}
-                  onClick={() => setSelectedId(race.id)}
-                >
-                  <span className="race-name">{race.name}</span>
-                  <span className="race-meta">
-                    {race.course} · {race.distanceFurlongs}f · {race.going} · {race.runnerCount}{" "}
-                    runners
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </aside>
+      <div className="shell">
+        <SidebarNav active={view} onSelect={setView} />
 
-        <main className="analysis">
-          {error && <div className="banner error">{error}</div>}
-          {loading && <div className="banner">Crunching the numbers…</div>}
+        <main className="main-pane">
+          {view === "dashboard" && (
+            <DashboardView
+              dashboard={dashboard}
+              races={races}
+              loading={loadingRaces}
+              onOpenRace={openRace}
+            />
+          )}
 
-          {analysis && !loading && (
-            <>
-              <div className="analysis-head">
-                <h2>{analysis.name}</h2>
-                <p>
-                  {analysis.course} · {analysis.distanceFurlongs}f · going: {analysis.going}
-                </p>
-                {topPick && (
-                  <div className="top-pick">
-                    <span className="top-pick-label">Model top pick</span>
-                    <span className="top-pick-name">{topPick.name}</span>
-                    <span className="top-pick-prob">
-                      {Math.round(topPick.winProbability * 100)}% win chance
-                    </span>
-                  </div>
-                )}
-              </div>
+          {view === "race-dna" && (
+            <RaceDnaView
+              races={races}
+              selectedId={selectedId}
+              analysis={analysis}
+              loading={loadingAnalysis || loadingRaces}
+              error={error}
+              onSelectRace={setSelectedId}
+            />
+          )}
 
-              <ol className="runner-list">
-                {analysis.runners.map((runner) => (
-                  <RunnerCard key={runner.horseId} runner={runner} />
-                ))}
-              </ol>
-            </>
+          {view === "import-meeting" && (
+            <ImportView
+              title="Import Meeting CSV"
+              description="Upload a Wizard-style meeting CSV to load fields, form, and TAB numbers."
+              sampleHint="Expected columns include Meeting, Race Number, Tab Number, Horse, Distance, Form / Last Finish pos. Sample: samples/meeting-flemington.csv"
+              onImport={importMeetingCsv}
+              onImported={() => {
+                void refreshLists();
+              }}
+            />
+          )}
+
+          {view === "import-results" && (
+            <ImportView
+              title="Import Results"
+              description="Attach finishing positions to runners matched by meeting, race number, and exact TAB number."
+              sampleHint="Expected columns: Meeting, Race Number, Tab Number, Horse, Finish Position. Sample: samples/results-flemington.csv"
+              onImport={importResultsCsv}
+              onImported={() => {
+                void refreshLists();
+              }}
+            />
+          )}
+
+          {view === "import-odds" && (
+            <ImportView
+              title="Import TAB / TABtouch Odds"
+              description="Import win/place odds and match them to runners using exact TAB numbers (so 10 and 13 never collide with 1)."
+              sampleHint="Expected columns: Meeting, Race Number, Tab Number, Horse, Win Odds, Place Odds, Source. Sample: samples/odds-tabtouch.csv"
+              onImport={importOddsCsv}
+              onImported={() => {
+                void refreshLists();
+              }}
+            />
           )}
         </main>
       </div>
