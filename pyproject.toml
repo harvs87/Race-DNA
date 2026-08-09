@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "racedna"
-version = "0.3.0"
-description = "Personal horse racing history DB and trend tipper"
+version = "0.4.0"
+description = "Simple local racing DB: upload meeting/results/screenshots and tip from trends"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []

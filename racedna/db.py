@@ -156,6 +156,18 @@ CREATE TABLE IF NOT EXISTS sectional_runs (
     raw_line TEXT
 );
 
+-- Screenshots / notes for races you actually want to punt on.
+-- kind: bias | sectionals | form | notes | other
+CREATE TABLE IF NOT EXISTS race_assets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id INTEGER NOT NULL REFERENCES races(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    source_path TEXT,
+    note TEXT,
+    tags TEXT,
+    imported_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_races_meeting ON races(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_runners_race ON runners(race_id);
 CREATE INDEX IF NOT EXISTS idx_form_runner ON form_runs(runner_id);
@@ -163,6 +175,7 @@ CREATE INDEX IF NOT EXISTS idx_horses_name ON horses(name);
 CREATE INDEX IF NOT EXISTS idx_meetings_track_date ON meetings(track, meeting_date);
 CREATE INDEX IF NOT EXISTS idx_sectional_horse ON sectional_runs(horse_id);
 CREATE INDEX IF NOT EXISTS idx_sectional_date ON sectional_runs(form_date);
+CREATE INDEX IF NOT EXISTS idx_race_assets_race ON race_assets(race_id);
 """
 
 MIGRATIONS = [

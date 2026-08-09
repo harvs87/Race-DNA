@@ -56,8 +56,18 @@ def test_import_sectional_json_and_score(tmp_path: Path):
 
 
 def test_ocr_image_roundtrip():
+    import pytest
+
+    try:
+        from pytesseract import TesseractNotFoundError
+    except ImportError:  # pragma: no cover
+        pytest.skip("pytesseract not installed")
+
     png = FIXTURES / "demo_closer_sectionals.png"
-    text = ocr_image(png)
+    try:
+        text = ocr_image(png)
+    except TesseractNotFoundError:
+        pytest.skip("system tesseract not installed")
     # OCR should at least recover horse marker / settle-ish content
     assert "DEMO" in text.upper() or "CLOSER" in text.upper() or "SETTLE" in text.upper()
     page = parse_sectional_text(text)

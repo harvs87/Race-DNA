@@ -7,6 +7,7 @@ from pathlib import Path
 
 from racedna.db import connect, init_db
 from racedna.download import download_meetings, import_downloaded
+from racedna.import_assets import import_race_asset
 from racedna.import_meeting import import_meeting
 from racedna.import_results import import_results
 from racedna.import_sectionals import import_sectional, import_sectionals_dir
@@ -58,6 +59,23 @@ def cmd_import_sectionals(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_add_asset(args: argparse.Namespace) -> int:
+    conn = connect(args.db)
+    init_db(conn)
+    stats = import_race_asset(
+        conn,
+        args.path,
+        kind=args.kind,
+        note=args.note,
+        race_id=args.race_id,
+        track=args.track,
+        meeting_date=args.date,
+        race_number=args.race,
+    )
+    print(json.dumps({"ok": True, "type": "asset", **stats}, indent=2))
+    return 0
+
+
 def cmd_import_inbox(args: argparse.Namespace) -> int:
     inbox = Path(args.inbox)
     conn = connect(args.db)
@@ -78,7 +96,6 @@ def cmd_import_inbox(args: argparse.Namespace) -> int:
         if "MeetingId" in text and "RaceResults[" in text:
             results_paths.append(path)
         elif name.endswith("_ratings.csv") or name.endswith("_sectionals.csv"):
-            # kept on disk for later; not imported by v0.2 meeting/results importers
             continue
         else:
             meeting_paths.append(path)
@@ -90,12 +107,46 @@ def cmd_import_inbox(args: argparse.Namespace) -> int:
         stats = import_results(conn, path)
         reports.append({"file": str(path), "type": "results", **stats})
 
-    # Sectionals: scan inbox once (includes inbox/sectionals via recursive glob)
     if inbox.exists():
         for stats in import_sectionals_dir(conn, inbox):
             reports.append({"file": stats.get("source"), "type": "sectional", **stats})
 
     print(json.dumps({"ok": True, "imports": reports}, indent=2))
+    return 0
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    conn = connect(args.db)
+    init_db(conn)
+    meetings = conn.execute(
+        """
+        SELECT m.id, m.track, m.meeting_date,
+               COUNT(DISTINCT r.id) AS races,
+               COUNT(DISTINCT ru.id) AS runners,
+               COUNT(DISTINCT res.id) AS results,
+               COUNT(DISTINCT a.id) AS assets
+        FROM meetings m
+        LEFT JOIN races r ON r.meeting_id = m.id
+        LEFT JOIN runners ru ON ru.race_id = r.id
+        LEFT JOIN results res ON res.runner_id = ru.id
+        LEFT JOIN race_assets a ON a.race_id = r.id
+        GROUP BY m.id
+        ORDER BY m.meeting_date DESC, m.id DESC
+        """
+    ).fetchall()
+    payload = [dict(row) for row in meetings]
+    if args.json:
+        print(json.dumps({"ok": True, "meetings": payload}, indent=2))
+        return 0
+    if not payload:
+        print("No meetings in database yet. Import a meeting CSV first.")
+        return 0
+    print(f"{'id':>4}  {'date':<12}  {'track':<24}  races  runners  results  assets")
+    for m in payload:
+        print(
+            f"{m['id']:>4}  {m['meeting_date']:<12}  {m['track']:<24}  "
+            f"{m['races']:>5}  {m['runners']:>7}  {m['results']:>7}  {m['assets']:>6}"
+        )
     return 0
 
 
@@ -223,7 +274,10 @@ def cmd_download(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="racedna",
-        description="RaceDNA — import form/results and tip races from your own history DB",
+        description=(
+            "RaceDNA — simple local DB: upload meeting + results, "
+            "attach race screenshots, tip from past form/trends"
+        ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -231,30 +285,83 @@ def build_parser() -> argparse.ArgumentParser:
     _add_db_arg(p_init)
     p_init.set_defaults(func=cmd_init)
 
-    p_im = sub.add_parser("import-meeting", help="Import Punting Form style meeting CSV")
+    p_im = sub.add_parser("import-meeting", help="Upload meeting/form CSV into the DB")
     _add_db_arg(p_im)
     p_im.add_argument("path", help="Path to meeting CSV")
     p_im.set_defaults(func=cmd_import_meeting)
 
-    p_ir = sub.add_parser("import-results", help="Import wide results CSV")
+    p_ir = sub.add_parser("import-results", help="Upload results CSV into the DB")
     _add_db_arg(p_ir)
     p_ir.add_argument("path", help="Path to results CSV")
     p_ir.set_defaults(func=cmd_import_results)
 
     p_is = sub.add_parser(
         "import-sectionals",
-        help="Import sectional screenshot / .sectional.txt / .sectional.json",
+        help="Upload horse sectional screenshot / .sectional.txt / .sectional.json",
     )
     _add_db_arg(p_is)
     p_is.add_argument("path", help="Image/text/json file or folder")
     p_is.set_defaults(func=cmd_import_sectionals)
 
-    p_inbox = sub.add_parser("import-inbox", help="Import CSVs + sectionals from inbox")
+    p_asset = sub.add_parser(
+        "add-asset",
+        help="Attach a bias/sectionals/notes screenshot (or note) to a race you want to punt",
+    )
+    _add_db_arg(p_asset)
+    p_asset.add_argument("path", nargs="?", help="Screenshot/image path (optional if --note only)")
+    p_asset.add_argument(
+        "--kind",
+        default="bias",
+        choices=["bias", "sectionals", "form", "notes", "other"],
+        help="What this screenshot/note is (default: bias)",
+    )
+    p_asset.add_argument("--note", help="Free-text note, e.g. 'rails + leaders'")
+    p_asset.add_argument("--race-id", type=int, help="Internal race id")
+    p_asset.add_argument("--track", help="Track name")
+    p_asset.add_argument("--date", help="Meeting date YYYY-MM-DD")
+    p_asset.add_argument("--race", type=int, help="Race number")
+    p_asset.set_defaults(func=cmd_add_asset)
+
+    p_inbox = sub.add_parser("import-inbox", help="Import CSVs + sectionals from inbox folder")
     _add_db_arg(p_inbox)
     p_inbox.add_argument("--inbox", default="data/inbox", help="Folder of uploads")
     p_inbox.set_defaults(func=cmd_import_inbox)
 
-    p_meetings = sub.add_parser("meetings", help="List Punting Form meetings for a date")
+    p_list = sub.add_parser("list", help="Show meetings stored in the DB")
+    _add_db_arg(p_list)
+    p_list.add_argument("--json", action="store_true")
+    p_list.set_defaults(func=cmd_list)
+
+    p_tip = sub.add_parser("tip", help="Rank runners using past results + form (+ attached bias)")
+    _add_db_arg(p_tip)
+    p_tip.add_argument("--track", help="Track name filter")
+    p_tip.add_argument("--date", help="Meeting date YYYY-MM-DD")
+    p_tip.add_argument("--meeting-id", type=int, help="Internal meeting id")
+    p_tip.add_argument(
+        "--going",
+        help="Override meeting going (Firm/Good/Soft/Heavy/Synthetic)",
+    )
+    p_tip.add_argument("--top", type=int, default=3, help="Top N per race")
+    p_tip.add_argument("--json", action="store_true", help="JSON output")
+    p_tip.set_defaults(func=cmd_tip)
+
+    p_bt = sub.add_parser("backtest", help="Score top picks against imported results")
+    _add_db_arg(p_bt)
+    p_bt.add_argument("--track", help="Track name filter")
+    p_bt.add_argument("--date", help="Meeting date YYYY-MM-DD")
+    p_bt.add_argument("--meeting-id", type=int)
+    p_bt.add_argument(
+        "--going",
+        help="Override meeting going (Firm/Good/Soft/Heavy/Synthetic)",
+    )
+    p_bt.add_argument("--top", type=int, default=1, help="Top N selections per race")
+    p_bt.set_defaults(func=cmd_backtest)
+
+    # Optional convenience — not required for the simple upload workflow.
+    p_meetings = sub.add_parser(
+        "meetings",
+        help="(Optional) List Punting Form meetings for a date via API",
+    )
     p_meetings.add_argument("--date", required=True, help="Meeting date YYYY-MM-DD")
     p_meetings.add_argument("--track", help="Filter track name contains")
     p_meetings.add_argument("--api-key", help="Punting Form API key (or env PUNTINGFORM_API_KEY)")
@@ -268,7 +375,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_dl = sub.add_parser(
         "download",
-        help="Download meeting form/results CSVs from Punting Form API",
+        help="(Optional) Download meeting/results CSVs from Punting Form API",
     )
     _add_db_arg(p_dl)
     p_dl.add_argument("--date", help="Meeting date YYYY-MM-DD")
@@ -299,31 +406,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Import downloaded form/results into the DB",
     )
     p_dl.set_defaults(func=cmd_download)
-
-    p_tip = sub.add_parser("tip", help="Rank runners for a meeting")
-    _add_db_arg(p_tip)
-    p_tip.add_argument("--track", help="Track name filter")
-    p_tip.add_argument("--date", help="Meeting date YYYY-MM-DD")
-    p_tip.add_argument("--meeting-id", type=int, help="Internal meeting id")
-    p_tip.add_argument(
-        "--going",
-        help="Override meeting going (Firm/Good/Soft/Heavy/Synthetic)",
-    )
-    p_tip.add_argument("--top", type=int, default=3, help="Top N per race")
-    p_tip.add_argument("--json", action="store_true", help="JSON output")
-    p_tip.set_defaults(func=cmd_tip)
-
-    p_bt = sub.add_parser("backtest", help="Score top picks against imported results")
-    _add_db_arg(p_bt)
-    p_bt.add_argument("--track", help="Track name filter")
-    p_bt.add_argument("--date", help="Meeting date YYYY-MM-DD")
-    p_bt.add_argument("--meeting-id", type=int)
-    p_bt.add_argument(
-        "--going",
-        help="Override meeting going (Firm/Good/Soft/Heavy/Synthetic)",
-    )
-    p_bt.add_argument("--top", type=int, default=1, help="Top N selections per race")
-    p_bt.set_defaults(func=cmd_backtest)
 
     return parser
 

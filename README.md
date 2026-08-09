@@ -1,89 +1,70 @@
 # RaceDNA
 
-Personal horse racing history database and trend tipper.
+A **local SQLite database** for racing form.
 
-Upload your own **meeting CSV**, **results CSV**, and (later) sectional screenshots. RaceDNA stores the history locally and ranks runners from patterns in *your* data — not a third-party tip AI.
+That’s it. Upload a meeting. Upload results. For races you want to punt on, drop in screenshots (sectionals, bias, notes). Then ask for tips built from **past results + past form** in *your* DB.
 
-## Quick start
+No web app. No tip-service AI. Just your files → your DB → ranked runners.
+
+## Install
 
 ```bash
-python3 -m pip install -e ".[dev]"
-
-# 1) Put your Punting Form API key in the environment (or data/puntingform.key)
-export PUNTINGFORM_API_KEY="your-key"
-
-# 2) Download today's meetings (form + results) into data/inbox and import
-python3 -m racedna download --date 2026-08-09 --import
-
-# Or list meetings first
-python3 -m racedna meetings --date 2026-08-09
-
-# 3) Tip
-python3 -m racedna tip --track "Belmont Park" --date 2026-08-09 --going Soft
+python3 -m pip install -e .
 ```
 
-Sample Belmont CSVs are already in `data/inbox/` if you want to try offline:
+## Daily flow
 
 ```bash
-python3 -m racedna import-inbox
-python3 -m racedna tip --track "Belmont Park" --date 2026-08-01
+# 1) Upload meeting (form card CSV)
+python3 -m racedna import-meeting path/to/meeting.csv
+
+# 2) After the day / for history — upload results
+python3 -m racedna import-results path/to/results.csv
+
+# 3) For a race you’re interested in — attach screenshots / notes
+python3 -m racedna add-asset bias.png \
+  --track "Belmont Park" --date 2026-08-01 --race 3 \
+  --kind bias --note "rails + leaders"
+
+python3 -m racedna import-sectionals path/to/horse_sectionals.png
+# (or .sectional.json / .sectional.txt next to the image)
+
+# 4) Tip
+python3 -m racedna tip --track "Belmont Park" --date 2026-08-01 --going Soft
+
+# See what’s in the DB
+python3 -m racedna list
+```
+
+Drop files in `data/inbox/` and run `python3 -m racedna import-inbox` if you prefer batch.
+
+Sample Belmont CSVs are already under `data/inbox/`.
+
+## What the tipper uses
+
+- Past form lines on each runner (going, track, distance, class, freshness)
+- Official results you’ve imported (for history + backtests)
+- Sectional screenshots you’ve attached to horses
+- Bias / notes screenshots you’ve attached to a race (`rails`, `leaders`, `closers`, `wide`, …)
+
+```bash
 python3 -m racedna backtest --track "Belmont Park" --date 2026-08-01 --top 1
 ```
 
-## Daily workflow
+Database file: `data/racedna.db`
 
-1. Set API key once:
-   - `export PUNTINGFORM_API_KEY=...` or
-   - save key to `data/puntingform.key`
-2. Download + import:
-   ```bash
-   python3 -m racedna download --date YYYY-MM-DD --track "Belmont Park" --import
-   ```
-3. Tip: `python3 -m racedna tip --date YYYY-MM-DD --going Soft`
-4. After races: download again (results fill in) and `python3 -m racedna backtest --date YYYY-MM-DD`
+## Optional: Punting Form API download
 
-Optional extras on download: `--ratings`, `--sectionals` (Modeller), `--meeting-csv`.
-
-Manual uploads still work: drop CSVs / sectional screenshots into `data/inbox/` then `import-inbox`.
-
-### Sectional screenshots
+If you have an API key you can pull CSVs instead of saving them by hand:
 
 ```bash
-python3 -m pip install -e ".[ocr]"   # needs system tesseract-ocr
-python3 -m racedna import-sectionals data/inbox/sectionals/willingham.sectional.json
-python3 -m racedna import-sectionals path/to/pf_screenshot.png
+export PUNTINGFORM_API_KEY="your-key"
+python3 -m racedna download --date 2026-08-09 --track "Belmont Park" --import
 ```
 
-OCR is best-effort on dense PF tables. For important horses, drop a `.sectional.json` sidecar next to the image (same stem) — RaceDNA will prefer it.
+Not required for the core workflow.
 
-## What the scorer looks at (v0.2)
+## OCR (optional)
 
-Situational signals outweigh raw career win rate:
-
-- Soft/heavy vs good going match + wet-specialist detection
-- Same-track / track-distance records and recent local form
-- Margin-aware recent form (close-ups count; short-price bombs penalised)
-- Closing sectionals only when the horse finished competitively
-- Freshness / spell handling (ideal 10–28d; first-up record after spells)
-- Barrier model stronger on wet tracks (inside favoured, wide punished)
-- Class drop/rise from form class text
-- Race-relative normalisation so one fat career WR doesn’t dominate
-- Optional `--going Soft` override when the card has no official condition yet
-- Screenshot sectionals: run style / settle, closer patterns, L6/L2, fast-pace handling
-
-## Commands
-
-| Command | Purpose |
-|---|---|
-| `racedna init-db` | Create SQLite schema |
-| `racedna import-meeting PATH` | Import meeting/form CSV |
-| `racedna import-results PATH` | Import results CSV |
-| `racedna meetings --date YYYY-MM-DD` | List PF meetings/ids for a day |
-| `racedna download --date YYYY-MM-DD` | Download form/results CSVs via PF API |
-| `racedna download ... --import` | Download then load into SQLite |
-| `racedna import-inbox` | Import CSVs + sectionals from `data/inbox` |
-| `racedna import-sectionals PATH` | Import screenshot / `.sectional.txt` / `.sectional.json` |
-| `racedna tip` | Rank runners (`--top N`, `--json`) |
-| `racedna backtest` | Evaluate tips vs results |
-
-Database default path: `data/racedna.db`
+Dense sectional screenshots work best with a `.sectional.json` / `.sectional.txt` sidecar.
+Image OCR needs system Tesseract + `pip install -e ".[ocr]"`.

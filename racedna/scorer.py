@@ -459,6 +459,54 @@ def _style_barrier_score(
     return pts, reasons
 
 
+def _bias_score(
+    tags: list[str],
+    run_style: str | None,
+    settle: int | None,
+    barrier: int | None,
+) -> tuple[float, list[str]]:
+    """Light nudge from race bias screenshots/notes you attached."""
+    if not tags:
+        return 0.0, []
+    style = _run_style_bucket(run_style, settle)
+    pts = 0.0
+    reasons: list[str] = []
+    tagset = set(tags)
+
+    favours_inside = bool(tagset & {"rails", "inside", "true"})
+    favours_wide = bool(tagset & {"wide", "outside"})
+    favours_speed = bool(tagset & {"leaders", "on_pace", "speed"})
+    favours_closers = "closers" in tagset
+
+    if barrier is not None:
+        if favours_inside and barrier <= 4:
+            pts += 2.0
+            reasons.append("bias favours inside (+2.0)")
+        elif favours_inside and barrier >= 10:
+            pts -= 1.5
+            reasons.append("bias against wide (-1.5)")
+        if favours_wide and barrier >= 9:
+            pts += 1.5
+            reasons.append("bias favours wide (+1.5)")
+
+    if style == "forward" and favours_speed:
+        pts += 2.0
+        reasons.append("bias favours on-pace (+2.0)")
+    elif style == "back" and favours_closers:
+        pts += 2.0
+        reasons.append("bias favours closers (+2.0)")
+    elif style == "forward" and favours_closers:
+        pts -= 1.0
+        reasons.append("bias against leaders (-1.0)")
+    elif style == "back" and favours_speed:
+        pts -= 1.0
+        reasons.append("bias against backmarkers (-1.0)")
+
+    if tags and not reasons:
+        reasons.append(f"race bias noted: {', '.join(tags)}")
+    return pts, reasons
+
+
 def _sectional_screenshot_score(
     sectional_rows: list[sqlite3.Row],
     distance: int | None,
@@ -529,7 +577,10 @@ def _score_runner(
     distance: int | None,
     race_class: str | None,
     field_size: int,
+    bias_tags: list[str] | None = None,
 ) -> tuple[float, list[str]]:
+    run_style = runner["run_style"] if "run_style" in runner.keys() else None
+    settle = runner["settle"] if "settle" in runner.keys() else None
     parts: list[tuple[float, list[str]]] = [
         _career_base(runner),
         _going_form_score(form_rows, runner, going),
@@ -538,12 +589,13 @@ def _score_runner(
         _freshness_score(form_rows, meeting_date, runner),
         _sectional_screenshot_score(sectional_rows, distance),
         _style_barrier_score(
-            runner["run_style"] if "run_style" in runner.keys() else None,
-            runner["settle"] if "settle" in runner.keys() else None,
+            run_style,
+            settle,
             runner["barrier"],
             going,
             field_size,
         ),
+        _bias_score(bias_tags or [], run_style, settle, runner["barrier"]),
     ]
     total = 0.0
     reasons: list[str] = []
@@ -558,6 +610,7 @@ def _score_runner(
 
     # Keep the most useful reasons, preferring situational ones.
     priority = (
+        "bias",
         "soft",
         "heavy",
         "wet",
@@ -622,6 +675,17 @@ def score_meeting(
     tips: list[Tip] = []
     for race in races:
         race_going = condition_bucket(race["track_condition"]) or meeting_going
+        bias_tags: list[str] = []
+        asset_rows = cur.execute(
+            "SELECT tags, note, kind FROM race_assets WHERE race_id = ?",
+            (race["id"],),
+        ).fetchall()
+        for asset in asset_rows:
+            if asset["tags"]:
+                for tag in str(asset["tags"]).split(","):
+                    tag = tag.strip()
+                    if tag and tag not in bias_tags:
+                        bias_tags.append(tag)
         runners = cur.execute(
             """
             SELECT runners.*, horses.name AS horse_name,
@@ -666,6 +730,7 @@ def score_meeting(
                 distance=race["distance"],
                 race_class=race["class_text"],
                 field_size=len(runners),
+                bias_tags=bias_tags,
             )
             raw.append((total, reasons, runner))
 
