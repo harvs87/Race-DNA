@@ -1,15 +1,19 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
 let db: DatabaseSync | null = null;
 let dbPath: string | null = null;
 
+/** Repo root (…/Race-DNA), independent of npm workspace cwd. */
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+
 export function getDbPath(): string {
   if (process.env.RACEDNA_DB_PATH) {
     return resolve(process.env.RACEDNA_DB_PATH);
   }
-  return resolve(process.cwd(), "data", "racedna.sqlite");
+  return resolve(REPO_ROOT, "data", "racedna.sqlite");
 }
 
 export function openDatabase(path = getDbPath()): DatabaseSync {
