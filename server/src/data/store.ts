@@ -196,6 +196,8 @@ function persistMeeting(meeting: MeetingDetail, preserveImportedAt?: string): vo
 }
 
 function seedIfEmpty(): void {
+  if (process.env.RACEDNA_SEED === "0") return;
+
   const db = openDatabase();
   const count = db.prepare(`SELECT COUNT(*) AS c FROM meetings`).get() as { c: number };
   if (Number(count.c) > 0) return;
