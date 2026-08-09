@@ -9,27 +9,42 @@ Upload your own **meeting CSV**, **results CSV**, and (later) sectional screensh
 ```bash
 python3 -m pip install -e ".[dev]"
 
-# Create DB + import sample Belmont files in data/inbox/
-python3 -m racedna init-db
+# 1) Put your Punting Form API key in the environment (or data/puntingform.key)
+export PUNTINGFORM_API_KEY="your-key"
+
+# 2) Download today's meetings (form + results) into data/inbox and import
+python3 -m racedna download --date 2026-08-09 --import
+
+# Or list meetings first
+python3 -m racedna meetings --date 2026-08-09
+
+# 3) Tip
+python3 -m racedna tip --track "Belmont Park" --date 2026-08-09 --going Soft
+```
+
+Sample Belmont CSVs are already in `data/inbox/` if you want to try offline:
+
+```bash
 python3 -m racedna import-inbox
-
-# Rank runners for the imported meeting
 python3 -m racedna tip --track "Belmont Park" --date 2026-08-01
-
-# Check top picks against imported official results
 python3 -m racedna backtest --track "Belmont Park" --date 2026-08-01 --top 1
 ```
 
 ## Daily workflow
 
-1. Drop new files into `data/inbox/`
-   - Meeting form export (Punting Form style)
-   - Results export (wide `RaceResults[n].Runners[m].*` CSV)
-   - Sectional screenshots into `data/inbox/sectionals/` (PNG/JPG)
-   - Optional sidecars: `horse.sectional.json` or `horse.sectional.txt` (more reliable than OCR alone)
-2. Run `python3 -m racedna import-inbox`
-3. Run `python3 -m racedna tip` for ranked shortlists with reasons
-4. After the meeting, import results and run `python3 -m racedna backtest` to track strike rate / POT
+1. Set API key once:
+   - `export PUNTINGFORM_API_KEY=...` or
+   - save key to `data/puntingform.key`
+2. Download + import:
+   ```bash
+   python3 -m racedna download --date YYYY-MM-DD --track "Belmont Park" --import
+   ```
+3. Tip: `python3 -m racedna tip --date YYYY-MM-DD --going Soft`
+4. After races: download again (results fill in) and `python3 -m racedna backtest --date YYYY-MM-DD`
+
+Optional extras on download: `--ratings`, `--sectionals` (Modeller), `--meeting-csv`.
+
+Manual uploads still work: drop CSVs / sectional screenshots into `data/inbox/` then `import-inbox`.
 
 ### Sectional screenshots
 
@@ -63,6 +78,9 @@ Situational signals outweigh raw career win rate:
 | `racedna init-db` | Create SQLite schema |
 | `racedna import-meeting PATH` | Import meeting/form CSV |
 | `racedna import-results PATH` | Import results CSV |
+| `racedna meetings --date YYYY-MM-DD` | List PF meetings/ids for a day |
+| `racedna download --date YYYY-MM-DD` | Download form/results CSVs via PF API |
+| `racedna download ... --import` | Download then load into SQLite |
 | `racedna import-inbox` | Import CSVs + sectionals from `data/inbox` |
 | `racedna import-sectionals PATH` | Import screenshot / `.sectional.txt` / `.sectional.json` |
 | `racedna tip` | Rank runners (`--top N`, `--json`) |

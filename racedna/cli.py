@@ -6,9 +6,11 @@ import sys
 from pathlib import Path
 
 from racedna.db import connect, init_db
+from racedna.download import download_meetings, import_downloaded
 from racedna.import_meeting import import_meeting
 from racedna.import_results import import_results
 from racedna.import_sectionals import import_sectional, import_sectionals_dir
+from racedna.pf_api import PuntingFormClient
 from racedna.scorer import backtest_summary, score_meeting, tips_by_race
 
 
@@ -65,9 +67,19 @@ def cmd_import_inbox(args: argparse.Namespace) -> int:
     meeting_paths = []
     results_paths = []
     for path in all_csvs:
+        name = path.name.lower()
+        if name.endswith("_results.csv") or "_results_" in name:
+            results_paths.append(path)
+            continue
+        if name.endswith("_form.csv") or name.endswith("_meeting.csv"):
+            meeting_paths.append(path)
+            continue
         text = path.read_text(encoding="utf-8-sig", errors="ignore")[:2000]
         if "MeetingId" in text and "RaceResults[" in text:
             results_paths.append(path)
+        elif name.endswith("_ratings.csv") or name.endswith("_sectionals.csv"):
+            # kept on disk for later; not imported by v0.2 meeting/results importers
+            continue
         else:
             meeting_paths.append(path)
 
@@ -158,6 +170,56 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_meetings(args: argparse.Namespace) -> int:
+    client = PuntingFormClient(api_key=args.api_key)
+    meetings = client.meetings_list(
+        args.date,
+        stage=args.stage,
+        include_barrier_trials=args.barrier_trials,
+    )
+    if args.track:
+        needle = args.track.lower()
+        meetings = [m for m in meetings if needle in m.track.lower()]
+    payload = [
+        {
+            "meeting_id": m.meeting_id,
+            "track": m.track,
+            "meeting_date": m.meeting_date,
+            "rail": m.rail,
+            "expected_condition": m.expected_condition,
+            "has_sectionals": m.has_sectionals,
+            "stage": m.stage,
+        }
+        for m in meetings
+    ]
+    print(json.dumps({"ok": True, "date": args.date, "meetings": payload}, indent=2))
+    return 0
+
+
+def cmd_download(args: argparse.Namespace) -> int:
+    meeting_ids = args.meeting_id or None
+    report = download_meetings(
+        meeting_date=args.date,
+        meeting_ids=meeting_ids,
+        track=args.track,
+        out_dir=args.out,
+        api_key=args.api_key,
+        include_form=not args.no_form,
+        include_meeting=args.meeting_csv,
+        include_results=not args.no_results,
+        include_ratings=args.ratings,
+        include_sectionals=args.sectionals,
+        include_barrier_trials=args.barrier_trials,
+        stage=args.stage,
+    )
+    payload = report.to_dict()
+    if args.do_import:
+        imported = import_downloaded(report, db_path=args.db)
+        payload["imported"] = imported
+    print(json.dumps({"ok": not report.errors or any(f.ok for f in report.files), **payload}, indent=2))
+    return 1 if report.errors and not any(f.ok for f in report.files) else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="racedna",
@@ -191,6 +253,52 @@ def build_parser() -> argparse.ArgumentParser:
     _add_db_arg(p_inbox)
     p_inbox.add_argument("--inbox", default="data/inbox", help="Folder of uploads")
     p_inbox.set_defaults(func=cmd_import_inbox)
+
+    p_meetings = sub.add_parser("meetings", help="List Punting Form meetings for a date")
+    p_meetings.add_argument("--date", required=True, help="Meeting date YYYY-MM-DD")
+    p_meetings.add_argument("--track", help="Filter track name contains")
+    p_meetings.add_argument("--api-key", help="Punting Form API key (or env PUNTINGFORM_API_KEY)")
+    p_meetings.add_argument("--stage", default="A", help="N/W/A stage (default A)")
+    p_meetings.add_argument(
+        "--barrier-trials",
+        action="store_true",
+        help="Include barrier trials",
+    )
+    p_meetings.set_defaults(func=cmd_meetings)
+
+    p_dl = sub.add_parser(
+        "download",
+        help="Download meeting form/results CSVs from Punting Form API",
+    )
+    _add_db_arg(p_dl)
+    p_dl.add_argument("--date", help="Meeting date YYYY-MM-DD")
+    p_dl.add_argument(
+        "--meeting-id",
+        type=int,
+        action="append",
+        help="Meeting id (repeatable). Skips meetings-list when set",
+    )
+    p_dl.add_argument("--track", help="Only download tracks containing this name")
+    p_dl.add_argument("--out", default="data/inbox", help="Output folder (default data/inbox)")
+    p_dl.add_argument("--api-key", help="Punting Form API key (or env / data/puntingform.key)")
+    p_dl.add_argument("--stage", default="A", help="N/W/A stage (default A)")
+    p_dl.add_argument("--barrier-trials", action="store_true")
+    p_dl.add_argument("--no-form", action="store_true", help="Skip form CSV")
+    p_dl.add_argument("--no-results", action="store_true", help="Skip results CSV")
+    p_dl.add_argument("--meeting-csv", action="store_true", help="Also download meeting fields CSV")
+    p_dl.add_argument("--ratings", action="store_true", help="Also download ratings CSV")
+    p_dl.add_argument(
+        "--sectionals",
+        action="store_true",
+        help="Also download sectionals CSV (Modeller plan)",
+    )
+    p_dl.add_argument(
+        "--import",
+        dest="do_import",
+        action="store_true",
+        help="Import downloaded form/results into the DB",
+    )
+    p_dl.set_defaults(func=cmd_download)
 
     p_tip = sub.add_parser("tip", help="Rank runners for a meeting")
     _add_db_arg(p_tip)
