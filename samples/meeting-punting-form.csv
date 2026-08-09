@@ -1,0 +1,10 @@
+MeetingId,MeetingDate,Track,ExpectedCondition,RaceNumber,RaceName,Distance,RaceClass,TabNo,Runner,Barrier,Weight,Jockey,Trainer,Last10,HandicapRating,PFRating,CareerStarts,CareerWins,DaysSinceLastRun,Scratched
+88421,2026-08-09,Flemington,Good,1,Maiden Plate,1200,MDN,1,Fast Bolt,4,58.5,Brown,Smith,1321x,72,92,20,4,21,false
+88421,2026-08-09,Flemington,Good,1,Maiden Plate,1200,MDN,10,Steel Road,8,56.0,White,Jones,4560x,60,74,15,1,35,false
+88421,2026-08-09,Flemington,Good,1,Maiden Plate,1200,MDN,11,Copper Queen,5,55.5,Nguyen,Clarke,3412x,64,78,12,2,18,false
+88421,2026-08-09,Flemington,Good,1,Maiden Plate,1200,MDN,12,Midnight Oil,9,56.5,Evans,Patel,5523x,62,76,19,1,27,false
+88421,2026-08-09,Flemington,Good,1,Maiden Plate,1200,MDN,13,Lucky Thirteen,2,57.5,Black,Lee,2213x,68,86,18,2,14,false
+88421,2026-08-09,Flemington,Good,2,Benchmark 70 Handicap,1400,BM70,1,Harbour Mist,3,59.0,Brown,Smith,1124x,70,88,22,5,16,false
+88421,2026-08-09,Flemington,Good,2,Benchmark 70 Handicap,1400,BM70,3,River Dance,1,57.0,Nguyen,Clarke,4253x,66,84,18,2,28,false
+88421,2026-08-09,Flemington,Good,2,Benchmark 70 Handicap,1400,BM70,10,Night Parade,6,56.5,Evans,Patel,3614x,63,79,22,2,16,false
+88421,2026-08-09,Flemington,Good,2,Benchmark 70 Handicap,1400,BM70,13,Golden Mile,7,58.0,White,Jones,2135x,69,85,17,3,22,false

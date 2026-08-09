@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.vite/
+/data/
+*.sqlite
+*.sqlite-*
+server/fixtures/belmont-080826-real.csv
+client/public/080826_882d.csv
+samples/080826_882d.csv
