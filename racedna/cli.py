@@ -8,6 +8,7 @@ from pathlib import Path
 from racedna.db import connect, init_db
 from racedna.import_meeting import import_meeting
 from racedna.import_results import import_results
+from racedna.import_sectionals import import_sectional, import_sectionals_dir
 from racedna.scorer import backtest_summary, score_meeting, tips_by_race
 
 
@@ -42,18 +43,28 @@ def cmd_import_results(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_import_sectionals(args: argparse.Namespace) -> int:
+    conn = connect(args.db)
+    init_db(conn)
+    path = Path(args.path)
+    if path.is_dir():
+        reports = import_sectionals_dir(conn, path)
+        print(json.dumps({"ok": True, "type": "sectionals", "imports": reports}, indent=2))
+    else:
+        stats = import_sectional(conn, path)
+        print(json.dumps({"ok": True, "type": "sectional", **stats}, indent=2))
+    return 0
+
+
 def cmd_import_inbox(args: argparse.Namespace) -> int:
     inbox = Path(args.inbox)
     conn = connect(args.db)
     init_db(conn)
     reports = []
-    meeting_files = sorted(inbox.glob("*Park*.csv")) + sorted(inbox.glob("*meeting*.csv"))
-    # Prefer known naming: longer denser files first as meeting form exports
     all_csvs = sorted(inbox.glob("*.csv"))
     meeting_paths = []
     results_paths = []
     for path in all_csvs:
-        # Heuristic: results exports are wide and have MeetingId header
         text = path.read_text(encoding="utf-8-sig", errors="ignore")[:2000]
         if "MeetingId" in text and "RaceResults[" in text:
             results_paths.append(path)
@@ -66,6 +77,12 @@ def cmd_import_inbox(args: argparse.Namespace) -> int:
     for path in results_paths:
         stats = import_results(conn, path)
         reports.append({"file": str(path), "type": "results", **stats})
+
+    # Sectionals: scan inbox once (includes inbox/sectionals via recursive glob)
+    if inbox.exists():
+        for stats in import_sectionals_dir(conn, inbox):
+            reports.append({"file": stats.get("source"), "type": "sectional", **stats})
+
     print(json.dumps({"ok": True, "imports": reports}, indent=2))
     return 0
 
@@ -129,7 +146,6 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     )
     summary = backtest_summary(tips, top_n=args.top)
     print(json.dumps(summary, indent=2))
-    # Also show picks vs results for races that have results
     by_race = tips_by_race(tips, top_n=args.top)
     print("\nPicks vs results:")
     for rn, rows in by_race.items():
@@ -163,9 +179,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_ir.add_argument("path", help="Path to results CSV")
     p_ir.set_defaults(func=cmd_import_results)
 
-    p_inbox = sub.add_parser("import-inbox", help="Import all CSVs from an inbox folder")
+    p_is = sub.add_parser(
+        "import-sectionals",
+        help="Import sectional screenshot / .sectional.txt / .sectional.json",
+    )
+    _add_db_arg(p_is)
+    p_is.add_argument("path", help="Image/text/json file or folder")
+    p_is.set_defaults(func=cmd_import_sectionals)
+
+    p_inbox = sub.add_parser("import-inbox", help="Import CSVs + sectionals from inbox")
     _add_db_arg(p_inbox)
-    p_inbox.add_argument("--inbox", default="data/inbox", help="Folder of CSV uploads")
+    p_inbox.add_argument("--inbox", default="data/inbox", help="Folder of uploads")
     p_inbox.set_defaults(func=cmd_import_inbox)
 
     p_tip = sub.add_parser("tip", help="Rank runners for a meeting")

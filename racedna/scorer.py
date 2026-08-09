@@ -359,7 +359,7 @@ def _recent_form_score(form_rows: list[sqlite3.Row], race_class: str | None) -> 
         sec_pts = max(-2.0, min(5.0, (35.2 - avg_sec) * 2.2))
         pts += sec_pts
         dist = competitive[0]["sectional_distance"] or 600
-        reasons.append(f"closing L{dist} {avg_sec:.2f}s when competitive (+{sec_pts:.1f})")
+        reasons.append(f"closing L{dist} {avg_sec:.2f}s when competitive ({sec_pts:+.1f})")
 
     # Class move
     race_rank = _class_rank(race_class)
@@ -409,9 +409,119 @@ def _career_base(runner: sqlite3.Row) -> tuple[float, list[str]]:
     return pts, reasons
 
 
+def _run_style_bucket(run_style: str | None, settle: int | None) -> str:
+    text = (run_style or "").lower()
+    if settle is not None:
+        if settle <= 3:
+            return "forward"
+        if settle <= 7:
+            return "mid"
+        return "back"
+    compact = text.replace(" ", "").replace("_", "").replace("-", "")
+    if "leader" in compact or (compact.startswith("onpace") and "mid" not in compact):
+        return "forward"
+    if "onpacemid" in compact or "onpacemidfield" in compact:
+        return "mid"
+    if "back" in text or "off" in text:
+        return "back"
+    if "mid" in text:
+        return "mid"
+    return "unknown"
+
+
+def _style_barrier_score(
+    run_style: str | None,
+    settle: int | None,
+    barrier: int | None,
+    going: str | None,
+    field_size: int,
+) -> tuple[float, list[str]]:
+    style = _run_style_bucket(run_style, settle)
+    if style == "unknown" or barrier is None:
+        return 0.0, []
+    pts = 0.0
+    reasons: list[str] = []
+    wet = going in WET
+    if style == "forward" and barrier <= 4:
+        pts += 2.5 if wet else 1.5
+        reasons.append(f"forward map + inside gate ({pts:+.1f})")
+    elif style == "forward" and barrier >= 10:
+        pts -= 2.5 if wet else 1.5
+        reasons.append(f"forward map from wide ({pts:+.1f})")
+    elif style == "back" and barrier >= 10 and field_size >= 10:
+        pts -= 1.2
+        reasons.append("backmarker drawn wide (-1.2)")
+    elif style == "mid" and 4 <= barrier <= 8:
+        pts += 0.8
+        reasons.append("midfield map + mid barrier (+0.8)")
+    if settle is not None and run_style:
+        reasons.insert(0, f"run style {run_style}")
+    return pts, reasons
+
+
+def _sectional_screenshot_score(
+    sectional_rows: list[sqlite3.Row],
+    distance: int | None,
+) -> tuple[float, list[str]]:
+    if not sectional_rows:
+        return 0.0, []
+    reasons: list[str] = []
+    pts = 0.0
+    recent = sectional_rows[:4]
+
+    # Closing pattern: improve rank from To6 / midrace into 2-F
+    closes = 0
+    for r in recent:
+        early = r["split_to6"] if r["split_to6"] is not None else r["split_8_6"]
+        late = r["split_2_f"] if r["split_2_f"] is not None else r["split_4_2"]
+        if early is not None and late is not None and late + 2 <= early:
+            closes += 1
+    if closes:
+        bonus = closes * 1.8
+        pts += bonus
+        reasons.append(f"sectional closer pattern {closes}/{len(recent)} (+{bonus:.1f})")
+
+    # Peak late sectionals (L2/L4) when finishing in top 4
+    l2s = [
+        r["l2"]
+        for r in recent
+        if r["l2"] is not None and r["finish_pos"] is not None and r["finish_pos"] <= 4
+    ]
+    if l2s:
+        avg_l2 = sum(l2s) / len(l2s)
+        # Faster final 200 (~10.8-12.0) rewarded
+        late_pts = max(-1.5, min(4.0, (11.8 - avg_l2) * 3.0))
+        pts += late_pts
+        reasons.append(f"avg L2 {avg_l2:.2f}s in competitive runs ({late_pts:+.1f})")
+
+    l6s = [
+        r["l6"]
+        for r in recent
+        if r["l6"] is not None and r["finish_pos"] is not None and r["finish_pos"] <= 5
+    ]
+    if l6s:
+        avg_l6 = sum(l6s) / len(l6s)
+        l6_pts = max(-2.0, min(4.5, (35.2 - avg_l6) * 2.0))
+        pts += l6_pts
+        reasons.append(f"screenshot L6 {avg_l6:.2f}s ({l6_pts:+.1f})")
+
+    # Pace handling: placed when race pace was Fast/V.Fast
+    fast_places = 0
+    for r in recent:
+        race_pace = (r["early_pace_race"] or "").lower()
+        if "fast" in race_pace and r["finish_pos"] is not None and r["finish_pos"] <= 3:
+            fast_places += 1
+    if fast_places:
+        pts += fast_places * 1.5
+        reasons.append(f"handles fast pace ({fast_places}p) (+{fast_places * 1.5:.1f})")
+
+    return pts, reasons
+
+
 def _score_runner(
     runner: sqlite3.Row,
     form_rows: list[sqlite3.Row],
+    sectional_rows: list[sqlite3.Row],
     *,
     track: str,
     meeting_date: str | None,
@@ -426,6 +536,14 @@ def _score_runner(
         _track_distance_score(form_rows, runner, track, distance),
         _recent_form_score(form_rows, race_class),
         _freshness_score(form_rows, meeting_date, runner),
+        _sectional_screenshot_score(sectional_rows, distance),
+        _style_barrier_score(
+            runner["run_style"] if "run_style" in runner.keys() else None,
+            runner["settle"] if "settle" in runner.keys() else None,
+            runner["barrier"],
+            going,
+            field_size,
+        ),
     ]
     total = 0.0
     reasons: list[str] = []
@@ -439,7 +557,24 @@ def _score_runner(
         reasons.append(b_why)
 
     # Keep the most useful reasons, preferring situational ones.
-    priority = ("soft", "heavy", "wet", "barrier", "spell", "class", "track", "recent", "closing", "dist")
+    priority = (
+        "soft",
+        "heavy",
+        "wet",
+        "sectional",
+        "l2",
+        "l6",
+        "run style",
+        "forward",
+        "barrier",
+        "spell",
+        "class",
+        "track",
+        "recent",
+        "closing",
+        "dist",
+    )
+
     def _rank(text: str) -> int:
         low = text.lower()
         for i, key in enumerate(priority):
@@ -490,6 +625,8 @@ def score_meeting(
         runners = cur.execute(
             """
             SELECT runners.*, horses.name AS horse_name,
+                   horses.run_style AS run_style,
+                   horses.settle AS settle,
                    results.position AS result_position,
                    results.price AS result_price
             FROM runners
@@ -511,9 +648,18 @@ def score_meeting(
                 """,
                 (runner["id"],),
             ).fetchall()
+            sectional_rows = cur.execute(
+                """
+                SELECT * FROM sectional_runs
+                WHERE horse_id = ?
+                ORDER BY form_date DESC, id DESC
+                """,
+                (runner["horse_id"],),
+            ).fetchall()
             total, reasons = _score_runner(
                 runner,
                 form_rows,
+                sectional_rows,
                 track=meeting["track"],
                 meeting_date=meeting["meeting_date"],
                 going=race_going,

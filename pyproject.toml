@@ -4,14 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "racedna"
-version = "0.1.0"
+version = "0.2.0"
 description = "Personal horse racing history DB and trend tipper"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+ocr = ["pillow>=10.0", "pytesseract>=0.3.10"]
+dev = ["pytest>=8.0", "pillow>=10.0", "pytesseract>=0.3.10"]
 
 [project.scripts]
 racedna = "racedna.cli:main"

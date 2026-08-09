@@ -45,7 +45,9 @@ CREATE TABLE IF NOT EXISTS horses (
     sex TEXT,
     sire TEXT,
     dam TEXT,
-    country TEXT
+    country TEXT,
+    run_style TEXT,
+    settle INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS runners (
@@ -112,12 +114,61 @@ CREATE TABLE IF NOT EXISTS results (
     original_barrier INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS sectional_imports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_path TEXT NOT NULL,
+    horse_name TEXT,
+    run_style TEXT,
+    settle INTEGER,
+    ocr_text TEXT,
+    imported_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sectional_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    import_id INTEGER REFERENCES sectional_imports(id) ON DELETE CASCADE,
+    horse_id INTEGER REFERENCES horses(id),
+    form_run_id INTEGER REFERENCES form_runs(id),
+    form_date TEXT,
+    track TEXT,
+    barrier INTEGER,
+    rail TEXT,
+    distance INTEGER,
+    margin REAL,
+    finish_pos INTEGER,
+    finish_time TEXT,
+    split_to6 INTEGER,
+    split_12_10 INTEGER,
+    split_10_8 INTEGER,
+    split_8_6 INTEGER,
+    split_6_4 INTEGER,
+    split_4_2 INTEGER,
+    split_2_f INTEGER,
+    l12 REAL,
+    l10 REAL,
+    l8 REAL,
+    l6 REAL,
+    l4 REAL,
+    l2 REAL,
+    early_pace_runner TEXT,
+    early_pace_race TEXT,
+    bmark_runner_fin REAL,
+    raw_line TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_races_meeting ON races(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_runners_race ON runners(race_id);
 CREATE INDEX IF NOT EXISTS idx_form_runner ON form_runs(runner_id);
 CREATE INDEX IF NOT EXISTS idx_horses_name ON horses(name);
 CREATE INDEX IF NOT EXISTS idx_meetings_track_date ON meetings(track, meeting_date);
+CREATE INDEX IF NOT EXISTS idx_sectional_horse ON sectional_runs(horse_id);
+CREATE INDEX IF NOT EXISTS idx_sectional_date ON sectional_runs(form_date);
 """
+
+MIGRATIONS = [
+    ("horses", "run_style", "ALTER TABLE horses ADD COLUMN run_style TEXT"),
+    ("horses", "settle", "ALTER TABLE horses ADD COLUMN settle INTEGER"),
+]
 
 
 def default_db_path() -> Path:
@@ -133,6 +184,15 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def _existing_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {r["name"] if isinstance(r, sqlite3.Row) else r[1] for r in rows}
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    for table, column, ddl in MIGRATIONS:
+        cols = _existing_columns(conn, table)
+        if column not in cols:
+            conn.execute(ddl)
     conn.commit()
