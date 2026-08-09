@@ -348,6 +348,12 @@ export function resetStore(): void {
   seedIfEmpty();
 }
 
+export function resetStoreMessage(): string {
+  return process.env.RACEDNA_SEED === "0"
+    ? "SQLite store reset (empty — seeding disabled)."
+    : "SQLite store reset and reseeded.";
+}
+
 export function applyMeetingImport(csvText: string): ImportReport {
   initStore();
   const parsed = parseMeetingCsv(csvText);
