@@ -1,67 +1,381 @@
-import type { DashboardSummary, ImportReport, Race } from "../analysis/types.js";
+import type {
+  DashboardSummary,
+  Going,
+  Horse,
+  ImportReport,
+  MeetingDetail,
+  MeetingSummary,
+  Race,
+} from "../analysis/types.js";
 import { analyzeRace } from "../analysis/engine.js";
-import { importMeetingCsv } from "../import/meetingCsv.js";
+import { openDatabase, recreateDatabase } from "../db/database.js";
+import { parseMeetingCsv } from "../import/meetingCsv.js";
 import { importOddsCsv } from "../import/oddsCsv.js";
 import { importResultsCsv } from "../import/resultsCsv.js";
 import { seedRaces } from "./races.js";
 
-let races: Race[] = structuredClone(seedRaces);
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function meetingStats(races: Race[]): Pick<
+  MeetingSummary,
+  "raceCount" | "runnerCount" | "resultsCount" | "oddsCount"
+> {
+  let runnerCount = 0;
+  let resultsCount = 0;
+  let oddsCount = 0;
+  for (const race of races) {
+    runnerCount += race.runners.length;
+    for (const runner of race.runners) {
+      if (runner.finishPosition !== undefined) resultsCount += 1;
+      if (runner.winOdds !== undefined) oddsCount += 1;
+    }
+  }
+  return {
+    raceCount: races.length,
+    runnerCount,
+    resultsCount,
+    oddsCount,
+  };
+}
+
+function rowToHorse(row: Record<string, unknown>): Horse {
+  return {
+    id: String(row.id),
+    tabNumber: Number(row.tab_number),
+    name: String(row.name),
+    recentForm: JSON.parse(String(row.recent_form || "[]")) as number[],
+    speedFigure: Number(row.speed_figure),
+    optimalDistanceFurlongs: Number(row.optimal_distance_furlongs),
+    preferredGoing: JSON.parse(String(row.preferred_going || '["good"]')) as Going[],
+    classRating: Number(row.class_rating),
+    jockeyWinRate: Number(row.jockey_win_rate),
+    trainerWinRate: Number(row.trainer_win_rate),
+    daysSinceLastRun: Number(row.days_since_last_run),
+    barrier: row.barrier === null || row.barrier === undefined ? undefined : Number(row.barrier),
+    weightKg: row.weight_kg === null || row.weight_kg === undefined ? undefined : Number(row.weight_kg),
+    jockey: row.jockey ? String(row.jockey) : undefined,
+    trainer: row.trainer ? String(row.trainer) : undefined,
+    winOdds: row.win_odds === null || row.win_odds === undefined ? undefined : Number(row.win_odds),
+    placeOdds:
+      row.place_odds === null || row.place_odds === undefined ? undefined : Number(row.place_odds),
+    oddsSource: row.odds_source ? String(row.odds_source) : undefined,
+    finishPosition:
+      row.finish_position === null || row.finish_position === undefined
+        ? undefined
+        : Number(row.finish_position),
+    scratched: Number(row.scratched) === 1,
+  };
+}
+
+function loadRacesForMeeting(meetingId: string, course: string, date?: string): Race[] {
+  const db = openDatabase();
+  const raceRows = db
+    .prepare(
+      `SELECT * FROM races WHERE meeting_id = ? ORDER BY race_number ASC`,
+    )
+    .all(meetingId) as Array<Record<string, unknown>>;
+
+  return raceRows.map((raceRow) => {
+    const runners = (
+      db
+        .prepare(`SELECT * FROM runners WHERE race_id = ? ORDER BY tab_number ASC`)
+        .all(String(raceRow.id)) as Array<Record<string, unknown>>
+    ).map(rowToHorse);
+
+    return {
+      id: String(raceRow.id),
+      meetingId,
+      name: String(raceRow.name),
+      course,
+      date: date || undefined,
+      raceNumber: Number(raceRow.race_number),
+      distanceFurlongs: Number(raceRow.distance_furlongs),
+      distanceMeters:
+        raceRow.distance_meters === null || raceRow.distance_meters === undefined
+          ? undefined
+          : Number(raceRow.distance_meters),
+      going: String(raceRow.going) as Going,
+      className: raceRow.class_name ? String(raceRow.class_name) : undefined,
+      runners,
+    };
+  });
+}
+
+function persistMeeting(meeting: MeetingDetail, preserveImportedAt?: string): void {
+  const db = openDatabase();
+  const importedAt = preserveImportedAt ?? meeting.importedAt ?? nowIso();
+  const updatedAt = nowIso();
+  const stats = meetingStats(meeting.races);
+
+  db.exec("BEGIN");
+  try {
+    db.prepare(`DELETE FROM meetings WHERE id = ?`).run(meeting.id);
+
+    db.prepare(
+      `INSERT INTO meetings (
+        id, course, date, track_condition, source, punting_form_meeting_id, imported_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      meeting.id,
+      meeting.course,
+      meeting.date ?? null,
+      meeting.trackCondition ?? null,
+      meeting.source,
+      meeting.puntingFormMeetingId ?? null,
+      importedAt,
+      updatedAt,
+    );
+
+    const insertRace = db.prepare(
+      `INSERT INTO races (
+        id, meeting_id, race_number, name, distance_meters, distance_furlongs, going, class_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insertRunner = db.prepare(
+      `INSERT INTO runners (
+        id, race_id, tab_number, name, recent_form, speed_figure, optimal_distance_furlongs,
+        preferred_going, class_rating, jockey_win_rate, trainer_win_rate, days_since_last_run,
+        barrier, weight_kg, jockey, trainer, win_odds, place_odds, odds_source, finish_position, scratched
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+
+    for (const race of meeting.races) {
+      insertRace.run(
+        race.id,
+        meeting.id,
+        race.raceNumber,
+        race.name,
+        race.distanceMeters ?? null,
+        race.distanceFurlongs,
+        race.going,
+        race.className ?? null,
+      );
+
+      for (const runner of race.runners) {
+        insertRunner.run(
+          runner.id,
+          race.id,
+          runner.tabNumber,
+          runner.name,
+          JSON.stringify(runner.recentForm),
+          runner.speedFigure,
+          runner.optimalDistanceFurlongs,
+          JSON.stringify(runner.preferredGoing),
+          runner.classRating,
+          runner.jockeyWinRate,
+          runner.trainerWinRate,
+          runner.daysSinceLastRun,
+          runner.barrier ?? null,
+          runner.weightKg ?? null,
+          runner.jockey ?? null,
+          runner.trainer ?? null,
+          runner.winOdds ?? null,
+          runner.placeOdds ?? null,
+          runner.oddsSource ?? null,
+          runner.finishPosition ?? null,
+          runner.scratched ? 1 : 0,
+        );
+      }
+    }
+
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  // Keep summary fields in sync for callers.
+  meeting.raceCount = stats.raceCount;
+  meeting.runnerCount = stats.runnerCount;
+  meeting.resultsCount = stats.resultsCount;
+  meeting.oddsCount = stats.oddsCount;
+  meeting.importedAt = importedAt;
+  meeting.updatedAt = updatedAt;
+}
+
+function seedIfEmpty(): void {
+  const db = openDatabase();
+  const count = db.prepare(`SELECT COUNT(*) AS c FROM meetings`).get() as { c: number };
+  if (Number(count.c) > 0) return;
+
+  const byMeeting = new Map<string, Race[]>();
+  for (const race of structuredClone(seedRaces)) {
+    const meetingId = race.meetingId;
+    const list = byMeeting.get(meetingId) ?? [];
+    list.push(race);
+    byMeeting.set(meetingId, list);
+  }
+
+  for (const [meetingId, races] of byMeeting) {
+    const sample = races[0];
+    const now = nowIso();
+    persistMeeting({
+      id: meetingId,
+      course: sample.course,
+      date: sample.date,
+      trackCondition: sample.going,
+      source: "seed",
+      raceCount: races.length,
+      runnerCount: races.reduce((sum, race) => sum + race.runners.length, 0),
+      resultsCount: 0,
+      oddsCount: 0,
+      importedAt: now,
+      updatedAt: now,
+      races,
+    });
+  }
+}
+
+export function initStore(): void {
+  openDatabase();
+  seedIfEmpty();
+}
+
+export function listMeetingSummaries(): MeetingSummary[] {
+  initStore();
+  const db = openDatabase();
+  const rows = db
+    .prepare(`SELECT * FROM meetings ORDER BY date DESC, course ASC`)
+    .all() as Array<Record<string, unknown>>;
+
+  return rows.map((row) => {
+    const races = loadRacesForMeeting(
+      String(row.id),
+      String(row.course),
+      row.date ? String(row.date) : undefined,
+    );
+    const stats = meetingStats(races);
+    return {
+      id: String(row.id),
+      course: String(row.course),
+      date: row.date ? String(row.date) : undefined,
+      trackCondition: row.track_condition ? String(row.track_condition) : undefined,
+      source: String(row.source),
+      puntingFormMeetingId: row.punting_form_meeting_id
+        ? String(row.punting_form_meeting_id)
+        : undefined,
+      importedAt: String(row.imported_at),
+      updatedAt: String(row.updated_at),
+      ...stats,
+    };
+  });
+}
+
+export function getMeeting(id: string): MeetingDetail | undefined {
+  initStore();
+  const db = openDatabase();
+  const row = db.prepare(`SELECT * FROM meetings WHERE id = ?`).get(id) as
+    | Record<string, unknown>
+    | undefined;
+  if (!row) return undefined;
+
+  const races = loadRacesForMeeting(
+    String(row.id),
+    String(row.course),
+    row.date ? String(row.date) : undefined,
+  );
+  const stats = meetingStats(races);
+
+  return {
+    id: String(row.id),
+    course: String(row.course),
+    date: row.date ? String(row.date) : undefined,
+    trackCondition: row.track_condition ? String(row.track_condition) : undefined,
+    source: String(row.source),
+    puntingFormMeetingId: row.punting_form_meeting_id
+      ? String(row.punting_form_meeting_id)
+      : undefined,
+    importedAt: String(row.imported_at),
+    updatedAt: String(row.updated_at),
+    ...stats,
+    races,
+  };
+}
 
 export function listRaces(): Race[] {
-  return races;
+  return listMeetingSummaries().flatMap((summary) => getMeeting(summary.id)?.races ?? []);
 }
 
 export function getRace(id: string): Race | undefined {
-  return races.find((race) => race.id === id);
+  return listRaces().find((race) => race.id === id);
 }
 
 export function resetStore(): void {
-  races = structuredClone(seedRaces);
+  recreateDatabase();
+  seedIfEmpty();
 }
 
 export function applyMeetingImport(csvText: string): ImportReport {
-  const result = importMeetingCsv(csvText, races);
-  races = result.races;
-  return result.report;
+  initStore();
+  const parsed = parseMeetingCsv(csvText);
+  if (parsed.meeting.races.length === 0) return parsed.report;
+
+  const existing = getMeeting(parsed.meeting.id);
+  if (existing) {
+    // Preserve odds/results already stored for exact TAB numbers.
+    const priorByRaceTab = new Map<string, Horse>();
+    for (const race of existing.races) {
+      for (const runner of race.runners) {
+        priorByRaceTab.set(`${race.raceNumber}:${runner.tabNumber}`, runner);
+      }
+    }
+    parsed.meeting.races = parsed.meeting.races.map((race) => ({
+      ...race,
+      runners: race.runners.map((runner) => {
+        const prior = priorByRaceTab.get(`${race.raceNumber}:${runner.tabNumber}`);
+        if (!prior) return runner;
+        return {
+          ...runner,
+          winOdds: prior.winOdds,
+          placeOdds: prior.placeOdds,
+          oddsSource: prior.oddsSource,
+          finishPosition: prior.finishPosition,
+        };
+      }),
+    }));
+    persistMeeting(parsed.meeting, existing.importedAt);
+  } else {
+    persistMeeting(parsed.meeting);
+  }
+
+  return parsed.report;
+}
+
+function persistUpdatedMeetings(updatedRaces: Race[], meetingIds: string[]): void {
+  const raceMap = new Map(updatedRaces.map((race) => [race.id, race]));
+  for (const meetingId of meetingIds) {
+    const existing = getMeeting(meetingId);
+    if (!existing) continue;
+    existing.races = existing.races.map((race) => raceMap.get(race.id) ?? race);
+    persistMeeting(existing, existing.importedAt);
+  }
 }
 
 export function applyResultsImport(csvText: string): ImportReport {
-  const result = importResultsCsv(csvText, races);
-  races = result.races;
+  initStore();
+  const result = importResultsCsv(csvText, listRaces());
+  persistUpdatedMeetings(result.races, result.affectedMeetingIds);
   return result.report;
 }
 
 export function applyOddsImport(csvText: string): ImportReport {
-  const result = importOddsCsv(csvText, races);
-  races = result.races;
+  initStore();
+  const result = importOddsCsv(csvText, listRaces());
+  persistUpdatedMeetings(result.races, result.affectedMeetingIds);
   return result.report;
 }
 
 export function getDashboard(): DashboardSummary {
-  const meetings = new Map<
-    string,
-    { course: string; date?: string; raceCount: number; runnerCount: number }
-  >();
+  const meetings = listMeetingSummaries();
+  const races = listRaces();
 
   let resultsImported = 0;
   let oddsImported = 0;
-
-  for (const race of races) {
-    const key = `${race.course}::${race.date ?? ""}`;
-    const existing = meetings.get(key) ?? {
-      course: race.course,
-      date: race.date,
-      raceCount: 0,
-      runnerCount: 0,
-    };
-    existing.raceCount += 1;
-    existing.runnerCount += race.runners.length;
-    meetings.set(key, existing);
-
-    for (const runner of race.runners) {
-      if (runner.finishPosition !== undefined) resultsImported += 1;
-      if (runner.winOdds !== undefined) oddsImported += 1;
-    }
+  for (const meeting of meetings) {
+    resultsImported += meeting.resultsCount;
+    oddsImported += meeting.oddsCount;
   }
 
   const topPicks = races.map((race) => {
@@ -69,6 +383,7 @@ export function getDashboard(): DashboardSummary {
     const top = analysis.runners[0];
     return {
       raceId: race.id,
+      meetingId: race.meetingId,
       raceName: race.name,
       course: race.course,
       horseName: top?.name ?? "—",
@@ -79,12 +394,12 @@ export function getDashboard(): DashboardSummary {
   });
 
   return {
-    meetingCount: meetings.size,
+    meetingCount: meetings.length,
     raceCount: races.length,
     runnerCount: races.reduce((sum, race) => sum + race.runners.length, 0),
     resultsImported,
     oddsImported,
-    meetings: [...meetings.values()],
+    meetings,
     topPicks,
   };
 }

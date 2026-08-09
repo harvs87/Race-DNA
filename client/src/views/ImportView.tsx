@@ -6,7 +6,7 @@ interface Props {
   description: string;
   sampleHint: string;
   onImport: (csv: string) => Promise<ImportReport>;
-  onImported?: () => void;
+  onImported?: (report: ImportReport) => void;
 }
 
 export function ImportView({ title, description, sampleHint, onImport, onImported }: Props) {
@@ -22,7 +22,7 @@ export function ImportView({ title, description, sampleHint, onImport, onImporte
     try {
       const result = await onImport(text);
       setReport(result);
-      onImported?.();
+      onImported?.(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     } finally {
@@ -91,6 +91,7 @@ export function ImportView({ title, description, sampleHint, onImport, onImporte
             <li>Runners created: {report.runnersCreated}</li>
             <li>Runners matched: {report.runnersMatched}</li>
             <li>Runners unmatched: {report.runnersUnmatched}</li>
+            {report.meetingId && <li>Meeting id: {report.meetingId}</li>}
           </ul>
           {report.unmatched.length > 0 && (
             <>

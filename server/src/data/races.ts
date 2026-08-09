@@ -1,9 +1,10 @@
 import type { Race } from "../analysis/types.js";
 
-/** Seed races used when no meeting CSV has been imported yet. */
+/** Seed races used when the SQLite database is empty. */
 export const seedRaces: Race[] = [
   {
-    id: "ascot-2-40",
+    id: "ascot-2026-08-09-r1",
+    meetingId: "ascot-2026-08-09",
     name: "Ascot Champion Stakes",
     course: "Ascot",
     date: "2026-08-09",
@@ -80,7 +81,8 @@ export const seedRaces: Race[] = [
     ],
   },
   {
-    id: "york-3-15",
+    id: "york-2026-08-09-r2",
+    meetingId: "york-2026-08-09",
     name: "York Ebor Handicap",
     course: "York",
     date: "2026-08-09",
@@ -145,9 +147,6 @@ export const seedRaces: Race[] = [
   },
 ];
 
-/** @deprecated Prefer store helpers; retained for existing tests. */
-export const races = seedRaces;
-
 export function getRaceById(id: string): Race | undefined {
-  return seedRaces.find((race) => race.id === id);
+  return seedRaces.find((race) => race.id === id || race.id.startsWith(id));
 }

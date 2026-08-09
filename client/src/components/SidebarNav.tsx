@@ -2,8 +2,10 @@ import type { AppView } from "../types";
 
 const items: Array<{ id: AppView; label: string; hint: string }> = [
   { id: "dashboard", label: "Dashboard", hint: "Meetings overview" },
+  { id: "meeting", label: "Meeting", hint: "Races & runners" },
+  { id: "meeting-archive", label: "Meeting Archive", hint: "Reopen imports" },
   { id: "race-dna", label: "Race DNA", hint: "Model analysis" },
-  { id: "import-meeting", label: "Import Meeting CSV", hint: "Fields & form" },
+  { id: "import-meeting", label: "Import Meeting CSV", hint: "Punting Form" },
   { id: "import-results", label: "Import Results", hint: "Finish positions" },
   { id: "import-odds", label: "Import TAB Odds", hint: "TAB / TABtouch" },
 ];

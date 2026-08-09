@@ -1,6 +1,8 @@
 import type {
   DashboardSummary,
   ImportReport,
+  MeetingDetail,
+  MeetingSummary,
   RaceAnalysis,
   RaceSummary,
 } from "./types";
@@ -28,6 +30,14 @@ async function postCsv(url: string, csv: string): Promise<ImportReport> {
 
 export function fetchDashboard(): Promise<DashboardSummary> {
   return getJson<DashboardSummary>("/api/dashboard");
+}
+
+export function fetchMeetings(): Promise<MeetingSummary[]> {
+  return getJson<MeetingSummary[]>("/api/meetings");
+}
+
+export function fetchMeeting(id: string): Promise<MeetingDetail> {
+  return getJson<MeetingDetail>(`/api/meetings/${id}`);
 }
 
 export function fetchRaces(): Promise<RaceSummary[]> {

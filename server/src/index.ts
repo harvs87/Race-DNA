@@ -6,7 +6,10 @@ import {
   applyOddsImport,
   applyResultsImport,
   getDashboard,
+  getMeeting,
   getRace,
+  initStore,
+  listMeetingSummaries,
   listRaces,
   resetStore,
 } from "./data/store.js";
@@ -18,18 +21,34 @@ app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 app.use(express.text({ type: ["text/csv", "text/plain"], limit: "5mb" }));
 
+initStore();
+
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", service: "race-dna-api" });
+  res.json({ status: "ok", service: "race-dna-api", storage: "sqlite" });
 });
 
 app.get("/api/dashboard", (_req, res) => {
   res.json(getDashboard());
 });
 
+app.get("/api/meetings", (_req, res) => {
+  res.json(listMeetingSummaries());
+});
+
+app.get("/api/meetings/:id", (req, res) => {
+  const meeting = getMeeting(req.params.id);
+  if (!meeting) {
+    res.status(404).json({ error: `Meeting '${req.params.id}' not found` });
+    return;
+  }
+  res.json(meeting);
+});
+
 app.get("/api/races", (_req, res) => {
   res.json(
     listRaces().map((race) => ({
       id: race.id,
+      meetingId: race.meetingId,
       name: race.name,
       course: race.course,
       date: race.date,
@@ -89,7 +108,7 @@ app.post("/api/import/odds", (req, res) => {
 
 app.post("/api/reset", (_req, res) => {
   resetStore();
-  res.json({ status: "ok", message: "Store reset to seed races." });
+  res.json({ status: "ok", message: "SQLite store reset and reseeded." });
 });
 
 app.listen(port, () => {

@@ -5,56 +5,53 @@ race, breaks down the contributing factors (form, speed, distance fit, going,
 class, connections, freshness, and market odds when available), and turns those
 ratings into win probabilities.
 
+Imported meetings, results, and TAB/TABtouch odds are stored in a **local SQLite
+database** so data survives restarts.
+
 ## Stack
 
-- **Server** (`server/`) — Express + TypeScript API with the analysis engine,
-  CSV importers, and exact TAB-number horse matching.
-- **Client** (`client/`) — React + Vite + TypeScript dashboard with Race DNA
-  analysis and import screens.
-
-The project uses npm workspaces, so a single `npm install` at the root installs
-both packages.
+- **Server** (`server/`) — Express + TypeScript API, analysis engine, CSV importers,
+  exact TAB-number matching, SQLite persistence (`node:sqlite`).
+- **Client** (`client/`) — React + Vite + TypeScript UI (Dashboard, Meeting,
+  Meeting Archive, Race DNA, imports).
 
 ## Getting started
 
 ```bash
-npm install        # install all workspace dependencies
-npm run dev        # run the API (:4000) and the web app (:5173) together
+npm install
+npm run dev
 ```
 
-Then open http://localhost:5173. The Vite dev server proxies `/api/*` to the API.
+Open http://localhost:5173. API on :4000. Database file: `data/racedna.sqlite`.
 
-Run each side individually with `npm run dev:server` or `npm run dev:client`.
+## Daily workflow
 
-## App views
+1. **Import Meeting CSV** — Punting Form Meeting CSV (`Track`, `RaceNumber`,
+   `TabNo`, `Runner`, …). Wizard-style CSVs still work.
+2. **Meeting** — visually confirm every race and every runner (TAB numbers exact,
+   including 10/11/12/13).
+3. **Import Results** — match by meeting + race number + exact TAB number.
+4. **Import TAB Odds** — optional separate TABtouch/TAB capture (no live feed).
+5. **Race DNA** — model scores and factor breakdowns.
+6. **Meeting Archive** — reopen any previously imported meeting from SQLite.
 
-- **Dashboard** — meetings, runner counts, and model top picks.
-- **Race DNA** — race switching with ranked DNA scores and factor breakdowns.
-- **Import Meeting CSV** — Wizard-style fields/form import.
-- **Import Results** — finish positions matched by meeting + race + TAB number.
-- **Import TAB Odds** — TAB / TABtouch win/place odds with exact TAB matching
-  (runners 10 and 13 never collide with runner 1).
+Sample files: `samples/meeting-punting-form.csv`, `samples/results-punting-form.csv`,
+`samples/odds-tabtouch.csv`.
 
-Sample CSVs live in `samples/` and `server/fixtures/`.
+## Commands
 
-## Useful commands
-
-| Command             | Description                                  |
-| ------------------- | -------------------------------------------- |
-| `npm run dev`       | Run API + client together (development)      |
-| `npm run build`     | Type-check and build both packages           |
-| `npm test`          | Run server unit tests                        |
-| `npm run typecheck` | Type-check both packages without emitting     |
+| Command             | Description                              |
+| ------------------- | ---------------------------------------- |
+| `npm run dev`       | API + client                             |
+| `npm run build`     | Production build                         |
+| `npm test`          | Unit tests (incl. TAB 1/10/11/12/13)     |
+| `npm run typecheck` | Type-check both packages                 |
 
 ## API
 
-- `GET /api/health` — service health check.
-- `GET /api/dashboard` — meetings overview and top picks.
-- `GET /api/races` — list of races on the card.
-- `GET /api/races/:id/analysis` — ranked runners with DNA scores, win
-  probabilities, TAB numbers, odds/results when present, and per-factor
-  breakdowns.
-- `POST /api/import/meeting` — import meeting CSV (`text/csv` body or JSON `{ csv }`).
-- `POST /api/import/results` — import results CSV.
-- `POST /api/import/odds` — import TAB / TABtouch odds CSV.
-- `POST /api/reset` — restore seed races (dev helper).
+- `GET /api/health`
+- `GET /api/dashboard`
+- `GET /api/meetings` / `GET /api/meetings/:id`
+- `GET /api/races` / `GET /api/races/:id/analysis`
+- `POST /api/import/meeting|results|odds`
+- `POST /api/reset` — wipe SQLite and reseed demo meetings

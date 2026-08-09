@@ -34,16 +34,36 @@ export interface Horse {
 
 export interface Race {
   id: string;
+  meetingId: string;
   name: string;
   course: string;
   /** Meeting date ISO (YYYY-MM-DD) when known. */
   date?: string;
-  raceNumber?: number;
+  raceNumber: number;
   distanceFurlongs: number;
   distanceMeters?: number;
   going: Going;
   className?: string;
   runners: Horse[];
+}
+
+export interface MeetingSummary {
+  id: string;
+  course: string;
+  date?: string;
+  trackCondition?: string;
+  source: string;
+  puntingFormMeetingId?: string;
+  raceCount: number;
+  runnerCount: number;
+  resultsCount: number;
+  oddsCount: number;
+  importedAt: string;
+  updatedAt: string;
+}
+
+export interface MeetingDetail extends MeetingSummary {
+  races: Race[];
 }
 
 export interface FactorBreakdown {
@@ -71,6 +91,7 @@ export interface HorseAnalysis {
 
 export interface RaceAnalysis {
   raceId: string;
+  meetingId: string;
   name: string;
   course: string;
   date?: string;
@@ -87,14 +108,10 @@ export interface DashboardSummary {
   runnerCount: number;
   resultsImported: number;
   oddsImported: number;
-  meetings: Array<{
-    course: string;
-    date?: string;
-    raceCount: number;
-    runnerCount: number;
-  }>;
+  meetings: MeetingSummary[];
   topPicks: Array<{
     raceId: string;
+    meetingId: string;
     raceName: string;
     course: string;
     horseName: string;
@@ -106,6 +123,7 @@ export interface DashboardSummary {
 
 export interface ImportReport {
   kind: "meeting" | "results" | "odds";
+  meetingId?: string;
   rowsParsed: number;
   racesAffected: number;
   runnersMatched: number;

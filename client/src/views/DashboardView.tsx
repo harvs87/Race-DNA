@@ -5,9 +5,16 @@ interface Props {
   races: RaceSummary[];
   loading: boolean;
   onOpenRace: (raceId: string) => void;
+  onOpenMeeting: (meetingId: string) => void;
 }
 
-export function DashboardView({ dashboard, races, loading, onOpenRace }: Props) {
+export function DashboardView({
+  dashboard,
+  races,
+  loading,
+  onOpenRace,
+  onOpenMeeting,
+}: Props) {
   if (loading && !dashboard) {
     return <div className="banner">Loading dashboard…</div>;
   }
@@ -20,7 +27,7 @@ export function DashboardView({ dashboard, races, loading, onOpenRace }: Props) 
     <div className="dashboard">
       <div className="analysis-head">
         <h2>Dashboard</h2>
-        <p>Meetings loaded in RaceDNA, with model top picks ready for review.</p>
+        <p>Meetings stored locally in RaceDNA, with model top picks ready for review.</p>
       </div>
 
       <div className="stat-row">
@@ -50,12 +57,20 @@ export function DashboardView({ dashboard, races, loading, onOpenRace }: Props) 
         <h3>Meetings</h3>
         <ul className="plain-list">
           {dashboard.meetings.map((meeting) => (
-            <li key={`${meeting.course}-${meeting.date ?? "na"}`}>
-              <strong>{meeting.course}</strong>
-              <span className="muted">
-                {meeting.date ? ` · ${meeting.date}` : ""} · {meeting.raceCount} race
-                {meeting.raceCount === 1 ? "" : "s"} · {meeting.runnerCount} runners
-              </span>
+            <li key={meeting.id}>
+              <button type="button" className="link-btn" onClick={() => onOpenMeeting(meeting.id)}>
+                <strong>
+                  {meeting.course}
+                  {meeting.date ? ` · ${meeting.date}` : ""}
+                </strong>
+                <span className="muted">
+                  {" "}
+                  · {meeting.raceCount} race{meeting.raceCount === 1 ? "" : "s"} ·{" "}
+                  {meeting.runnerCount} runners
+                  {meeting.resultsCount ? ` · ${meeting.resultsCount} results` : ""}
+                  {meeting.oddsCount ? ` · ${meeting.oddsCount} odds` : ""}
+                </span>
+              </button>
             </li>
           ))}
         </ul>

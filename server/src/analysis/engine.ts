@@ -192,6 +192,7 @@ export function analyzeRace(race: Race): RaceAnalysis {
 
   return {
     raceId: race.id,
+    meetingId: race.meetingId,
     name: race.name,
     course: race.course,
     date: race.date,

@@ -1,19 +1,22 @@
 /** Minimal CSV parser that supports quoted fields and commas inside quotes. */
 export function parseCsv(text: string): { headers: string[]; rows: Record<string, string>[] } {
-  const lines = splitCsvLines(text.trim());
+  const lines = splitCsvLines(text.trim().replace(/^\uFEFF/, ""));
   if (lines.length === 0) {
     return { headers: [], rows: [] };
   }
 
   const headers = splitCsvRow(lines[0]).map((header) => header.trim());
-  const rows = lines.slice(1).filter((line) => line.trim().length > 0).map((line) => {
-    const cells = splitCsvRow(line);
-    const row: Record<string, string> = {};
-    headers.forEach((header, index) => {
-      row[header] = (cells[index] ?? "").trim();
+  const rows = lines
+    .slice(1)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const cells = splitCsvRow(line);
+      const row: Record<string, string> = {};
+      headers.forEach((header, index) => {
+        row[header] = (cells[index] ?? "").trim();
+      });
+      return row;
     });
-    return row;
-  });
 
   return { headers, rows };
 }
@@ -86,10 +89,26 @@ export function parseNumber(value: string): number | undefined {
   return Number.isFinite(num) ? num : undefined;
 }
 
+/**
+ * Parse a TAB / saddlecloth number.
+ * Rejects non-integers so "1.0" style junk and empty values cannot fuzzy-match.
+ */
 export function parseTabNumber(value: string): number | undefined {
-  const num = parseNumber(value);
-  if (num === undefined) return undefined;
-  // TAB numbers are positive integers; reject decimals / junk.
+  if (!value) return undefined;
+  const cleaned = value.replace(/^'/, "").trim();
+  if (!/^\d+$/.test(cleaned)) return undefined;
+  const num = Number(cleaned);
   if (!Number.isInteger(num) || num <= 0) return undefined;
   return num;
+}
+
+export function detectMeetingCsvFormat(headers: string[]): "punting-form" | "wizard" | "unknown" {
+  const lower = headers.map((header) => header.toLowerCase());
+  if (lower.includes("tabno") || lower.includes("meetingid") || lower.includes("last10")) {
+    return "punting-form";
+  }
+  if (lower.includes("tab number") || lower.includes("meeting")) {
+    return "wizard";
+  }
+  return "unknown";
 }
