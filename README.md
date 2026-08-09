@@ -29,16 +29,21 @@ python3 -m racedna backtest --track "Belmont Park" --date 2026-08-01 --top 1
 3. Run `racedna tip` for ranked shortlists with reasons
 4. After the meeting, import results and run `racedna backtest` to track strike rate / POT
 
-## What the scorer looks at (v0.1)
+## What the scorer looks at (v0.2)
 
-- Career / track / distance / going win & place rates
-- Recent form average position, wins/places
-- Distance suitability from past runs
-- Last-600 sectional times from the meeting CSV
-- Mild barrier adjustment in larger fields
-- First-up signal from `last10` + first-up record
+Situational signals outweigh raw career win rate:
 
-Sectional **screenshot OCR** is planned next — CSVs are the source of truth for cards and results.
+- Soft/heavy vs good going match + wet-specialist detection
+- Same-track / track-distance records and recent local form
+- Margin-aware recent form (close-ups count; short-price bombs penalised)
+- Closing sectionals only when the horse finished competitively
+- Freshness / spell handling (ideal 10–28d; first-up record after spells)
+- Barrier model stronger on wet tracks (inside favoured, wide punished)
+- Class drop/rise from form class text
+- Race-relative normalisation so one fat career WR doesn’t dominate
+- Optional `--going Soft` override when the card has no official condition yet
+
+Sectional **screenshot OCR** is still next — CSVs remain source of truth for cards/results.
 
 ## Commands
 

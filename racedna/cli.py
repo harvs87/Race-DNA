@@ -77,6 +77,7 @@ def cmd_tip(args: argparse.Namespace) -> int:
         track=args.track,
         meeting_date=args.date,
         meeting_id=args.meeting_id,
+        going=args.going,
     )
     by_race = tips_by_race(tips, top_n=args.top)
     if args.json:
@@ -124,6 +125,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         track=args.track,
         meeting_date=args.date,
         meeting_id=args.meeting_id,
+        going=args.going,
     )
     summary = backtest_summary(tips, top_n=args.top)
     print(json.dumps(summary, indent=2))
@@ -171,6 +173,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_tip.add_argument("--track", help="Track name filter")
     p_tip.add_argument("--date", help="Meeting date YYYY-MM-DD")
     p_tip.add_argument("--meeting-id", type=int, help="Internal meeting id")
+    p_tip.add_argument(
+        "--going",
+        help="Override meeting going (Firm/Good/Soft/Heavy/Synthetic)",
+    )
     p_tip.add_argument("--top", type=int, default=3, help="Top N per race")
     p_tip.add_argument("--json", action="store_true", help="JSON output")
     p_tip.set_defaults(func=cmd_tip)
@@ -180,6 +186,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt.add_argument("--track", help="Track name filter")
     p_bt.add_argument("--date", help="Meeting date YYYY-MM-DD")
     p_bt.add_argument("--meeting-id", type=int)
+    p_bt.add_argument(
+        "--going",
+        help="Override meeting going (Firm/Good/Soft/Heavy/Synthetic)",
+    )
     p_bt.add_argument("--top", type=int, default=1, help="Top N selections per race")
     p_bt.set_defaults(func=cmd_backtest)
 
