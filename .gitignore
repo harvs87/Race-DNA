@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+dist/
+*.egg-info/
+data/*.db
+data/*.db-*
+data/inbox/pf/
+data/puntingform_api_key
+.puntingform_api_key
+.DS_Store
