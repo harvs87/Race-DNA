@@ -163,6 +163,96 @@ CREATE INDEX IF NOT EXISTS idx_horses_name ON horses(name);
 CREATE INDEX IF NOT EXISTS idx_meetings_track_date ON meetings(track, meeting_date);
 CREATE INDEX IF NOT EXISTS idx_sectional_horse ON sectional_runs(horse_id);
 CREATE INDEX IF NOT EXISTS idx_sectional_date ON sectional_runs(form_date);
+
+CREATE TABLE IF NOT EXISTS pf_api_imports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    source_path TEXT,
+    external_meeting_id TEXT,
+    imported_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pf_sectionals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    import_id INTEGER REFERENCES pf_api_imports(id) ON DELETE CASCADE,
+    meeting_id INTEGER REFERENCES meetings(id),
+    race_id INTEGER REFERENCES races(id),
+    runner_id INTEGER REFERENCES runners(id),
+    horse_id INTEGER REFERENCES horses(id),
+    external_meeting_id TEXT,
+    external_race_id TEXT,
+    race_number INTEGER,
+    tab_no INTEGER,
+    horse_name TEXT,
+    form_date TEXT,
+    track TEXT,
+    distance INTEGER,
+    time_to_fin REAL,
+    last1200 REAL,
+    last1000 REAL,
+    last800 REAL,
+    last600 REAL,
+    last400 REAL,
+    last200 REAL,
+    last100 REAL,
+    split_12_10 REAL,
+    split_10_8 REAL,
+    split_8_6 REAL,
+    split_6_4 REAL,
+    split_4_2 REAL,
+    split_2_1 REAL,
+    pos_600 INTEGER,
+    pos_400 INTEGER,
+    pos_200 INTEGER,
+    pos_fin INTEGER,
+    marg_fin REAL,
+    meeting_rank_6f INTEGER,
+    meeting_rank_4f INTEGER,
+    meeting_rank_2f INTEGER,
+    early_200_avg REAL,
+    raw_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pf_benchmarks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    import_id INTEGER REFERENCES pf_api_imports(id) ON DELETE CASCADE,
+    meeting_id INTEGER REFERENCES meetings(id),
+    race_id INTEGER REFERENCES races(id),
+    runner_id INTEGER REFERENCES runners(id),
+    horse_id INTEGER REFERENCES horses(id),
+    external_meeting_id TEXT,
+    external_race_id TEXT,
+    race_number INTEGER,
+    tab_no INTEGER,
+    horse_name TEXT,
+    external_horse_id TEXT,
+    to600_all REAL,
+    last600_all REAL,
+    finish_all REAL,
+    to600_class REAL,
+    last600_class REAL,
+    finish_class REAL,
+    last400_all REAL,
+    last200_all REAL,
+    last100_all REAL,
+    split64_all REAL,
+    split42_all REAL,
+    split21_all REAL,
+    last400_class REAL,
+    last200_class REAL,
+    last100_class REAL,
+    split64_class REAL,
+    split42_class REAL,
+    split21_class REAL,
+    raw_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pf_sec_meeting ON pf_sectionals(meeting_id);
+CREATE INDEX IF NOT EXISTS idx_pf_sec_runner ON pf_sectionals(runner_id);
+CREATE INDEX IF NOT EXISTS idx_pf_sec_horse ON pf_sectionals(horse_id);
+CREATE INDEX IF NOT EXISTS idx_pf_bmark_meeting ON pf_benchmarks(meeting_id);
+CREATE INDEX IF NOT EXISTS idx_pf_bmark_runner ON pf_benchmarks(runner_id);
+CREATE INDEX IF NOT EXISTS idx_pf_bmark_race_tab ON pf_benchmarks(race_id, tab_no);
 """
 
 MIGRATIONS = [

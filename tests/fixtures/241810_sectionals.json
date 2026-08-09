@@ -1,0 +1,54 @@
+[
+  {
+    "meetingDate": "2026-08-01T00:00:00",
+    "track": "Belmont Park",
+    "meetingId": 241810,
+    "raceId": 9001,
+    "raceNo": 1,
+    "distance": 1200,
+    "officialTime": 70.12,
+    "officialSectionalTime": 34.8,
+    "officialSectionalDistance": 600,
+    "runnerSectionals": [
+      {
+        "tabNumber": 5,
+        "runnerId": 501,
+        "runnerName": "Want A Winner",
+        "timeToFin": 70.12,
+        "last1200Time": 70.12,
+        "last600Time": 34.1,
+        "last400Time": 22.4,
+        "last200Time": 11.2,
+        "last100Time": 5.8,
+        "split64": 11.7,
+        "split42": 11.2,
+        "split21": 5.4,
+        "pos600": 5,
+        "pos400": 3,
+        "pos200": 2,
+        "posFin": 1,
+        "margFin": 0.0,
+        "meetingRank6F": 2,
+        "meetingRank4F": 1,
+        "meetingRank2F": 1,
+        "early200Average": 11.9
+      },
+      {
+        "tabNumber": 4,
+        "runnerId": 504,
+        "runnerName": "Demo Closer",
+        "timeToFin": 70.8,
+        "last600Time": 33.9,
+        "last400Time": 22.1,
+        "last200Time": 10.9,
+        "pos600": 8,
+        "pos400": 5,
+        "pos200": 2,
+        "posFin": 2,
+        "margFin": 0.8,
+        "meetingRank6F": 1,
+        "meetingRank2F": 2
+      }
+    ]
+  }
+]

@@ -7,4 +7,6 @@ dist/
 *.egg-info/
 data/*.db
 data/*.db-*
+data/puntingform_api_key
+.puntingform_api_key
 .DS_Store

@@ -459,6 +459,60 @@ def _style_barrier_score(
     return pts, reasons
 
 
+def _pf_benchmark_score(bmark: sqlite3.Row | None) -> tuple[float, list[str]]:
+    """Score from official PF MeetingBenchmarks (lengths vs par; higher = better)."""
+    if bmark is None:
+        return 0.0, []
+    reasons: list[str] = []
+    pts = 0.0
+
+    finish = bmark["finish_all"] if "finish_all" in bmark.keys() else None
+    last600 = bmark["last600_all"] if "last600_all" in bmark.keys() else None
+    last200 = bmark["last200_all"] if "last200_all" in bmark.keys() else None
+    finish_class = bmark["finish_class"] if "finish_class" in bmark.keys() else None
+
+    # Benchmarks are in lengths; positive usually means faster than benchmark.
+    if finish is not None:
+        fin_pts = max(-4.0, min(8.0, float(finish) * 1.6))
+        pts += fin_pts
+        reasons.append(f"PF finish bmark {float(finish):+.2f}L ({fin_pts:+.1f})")
+    if last600 is not None:
+        l6_pts = max(-3.0, min(5.0, float(last600) * 1.3))
+        pts += l6_pts
+        reasons.append(f"PF L600 bmark {float(last600):+.2f}L ({l6_pts:+.1f})")
+    if last200 is not None and float(last200) >= 0.3:
+        pts += min(3.0, float(last200) * 1.1)
+        reasons.append(f"PF L200 bmark {float(last200):+.2f}L")
+    if finish_class is not None and float(finish_class) >= 0.5:
+        pts += min(2.5, float(finish_class))
+        reasons.append(f"PF class finish bmark {float(finish_class):+.2f}L")
+    return pts, reasons
+
+
+def _pf_meeting_sectional_score(sec: sqlite3.Row | None) -> tuple[float, list[str]]:
+    """Light signal from prior meeting sectional ranks (post-race PF API rows)."""
+    if sec is None:
+        return 0.0, []
+    reasons: list[str] = []
+    pts = 0.0
+    rank6 = sec["meeting_rank_6f"] if "meeting_rank_6f" in sec.keys() else None
+    rank2 = sec["meeting_rank_2f"] if "meeting_rank_2f" in sec.keys() else None
+    last600 = sec["last600"] if "last600" in sec.keys() else None
+    if rank6 is not None and rank6 <= 3:
+        pts += 2.0
+        reasons.append(f"PF meeting L600 rank #{rank6}")
+    if rank2 is not None and rank2 <= 3:
+        pts += 1.5
+        reasons.append(f"PF meeting L200 rank #{rank2}")
+    if last600 is not None and last600 > 0:
+        # Store as history enrichment only when competitive finish
+        pos = sec["pos_fin"] if "pos_fin" in sec.keys() else None
+        if pos is not None and pos <= 4 and last600 <= 34.8:
+            pts += 1.2
+            reasons.append(f"PF last sectional L600 {last600:.2f}s")
+    return pts, reasons
+
+
 def _sectional_screenshot_score(
     sectional_rows: list[sqlite3.Row],
     distance: int | None,
@@ -529,6 +583,8 @@ def _score_runner(
     distance: int | None,
     race_class: str | None,
     field_size: int,
+    pf_benchmark: sqlite3.Row | None = None,
+    pf_sectional: sqlite3.Row | None = None,
 ) -> tuple[float, list[str]]:
     parts: list[tuple[float, list[str]]] = [
         _career_base(runner),
@@ -536,6 +592,8 @@ def _score_runner(
         _track_distance_score(form_rows, runner, track, distance),
         _recent_form_score(form_rows, race_class),
         _freshness_score(form_rows, meeting_date, runner),
+        _pf_benchmark_score(pf_benchmark),
+        _pf_meeting_sectional_score(pf_sectional),
         _sectional_screenshot_score(sectional_rows, distance),
         _style_barrier_score(
             runner["run_style"] if "run_style" in runner.keys() else None,
@@ -561,6 +619,10 @@ def _score_runner(
         "soft",
         "heavy",
         "wet",
+        "pf finish",
+        "pf l600",
+        "pf class",
+        "pf meeting",
         "sectional",
         "l2",
         "l6",
@@ -656,6 +718,29 @@ def score_meeting(
                 """,
                 (runner["horse_id"],),
             ).fetchall()
+            pf_benchmark = cur.execute(
+                """
+                SELECT * FROM pf_benchmarks
+                WHERE runner_id = ?
+                   OR (race_id = ? AND tab_no = ?)
+                ORDER BY
+                    CASE WHEN runner_id = ? THEN 0 ELSE 1 END,
+                    id DESC
+                LIMIT 1
+                """,
+                (runner["id"], race["id"], runner["tab_no"], runner["id"]),
+            ).fetchone()
+            # Prefer prior-meeting sectionals for this horse (not today's card)
+            pf_sectional = cur.execute(
+                """
+                SELECT * FROM pf_sectionals
+                WHERE horse_id = ?
+                  AND (meeting_id IS NULL OR meeting_id != ?)
+                ORDER BY form_date DESC, id DESC
+                LIMIT 1
+                """,
+                (runner["horse_id"], meeting_id),
+            ).fetchone()
             total, reasons = _score_runner(
                 runner,
                 form_rows,
@@ -666,6 +751,8 @@ def score_meeting(
                 distance=race["distance"],
                 race_class=race["class_text"],
                 field_size=len(runners),
+                pf_benchmark=pf_benchmark,
+                pf_sectional=pf_sectional,
             )
             raw.append((total, reasons, runner))
 

@@ -7,8 +7,17 @@ from pathlib import Path
 
 from racedna.db import connect, init_db
 from racedna.import_meeting import import_meeting
+from racedna.import_pf_api import import_benchmarks_file, import_sectionals_file
 from racedna.import_results import import_results
 from racedna.import_sectionals import import_sectional, import_sectionals_dir
+from racedna.pf_api import (
+    PfApiError,
+    default_download_paths,
+    fetch_meeting_benchmarks,
+    fetch_meeting_sectionals,
+    resolve_api_key,
+    save_download,
+)
 from racedna.scorer import backtest_summary, score_meeting, tips_by_race
 
 
@@ -62,9 +71,27 @@ def cmd_import_inbox(args: argparse.Namespace) -> int:
     init_db(conn)
     reports = []
     all_csvs = sorted(inbox.glob("*.csv"))
+    # Also pick up official PF API downloads under inbox/pf/
+    pf_dir = inbox / "pf"
+    all_paths = list(all_csvs)
+    if pf_dir.exists():
+        all_paths.extend(sorted(pf_dir.glob("*.csv")))
+        all_paths.extend(sorted(pf_dir.glob("*.json")))
+
     meeting_paths = []
     results_paths = []
-    for path in all_csvs:
+    pf_sectional_paths = []
+    pf_benchmark_paths = []
+    for path in all_paths:
+        name = path.name.lower()
+        if "sectional" in name and path.suffix.lower() in {".json", ".csv"}:
+            pf_sectional_paths.append(path)
+            continue
+        if "benchmark" in name and path.suffix.lower() in {".json", ".csv"}:
+            pf_benchmark_paths.append(path)
+            continue
+        if path.suffix.lower() != ".csv":
+            continue
         text = path.read_text(encoding="utf-8-sig", errors="ignore")[:2000]
         if "MeetingId" in text and "RaceResults[" in text:
             results_paths.append(path)
@@ -77,6 +104,12 @@ def cmd_import_inbox(args: argparse.Namespace) -> int:
     for path in results_paths:
         stats = import_results(conn, path)
         reports.append({"file": str(path), "type": "results", **stats})
+    for path in pf_sectional_paths:
+        stats = import_sectionals_file(conn, path)
+        reports.append({"file": str(path), "type": "pf_sectionals", **stats})
+    for path in pf_benchmark_paths:
+        stats = import_benchmarks_file(conn, path)
+        reports.append({"file": str(path), "type": "pf_benchmarks", **stats})
 
     # Sectionals: scan inbox once (includes inbox/sectionals via recursive glob)
     if inbox.exists():
@@ -84,6 +117,109 @@ def cmd_import_inbox(args: argparse.Namespace) -> int:
             reports.append({"file": stats.get("source"), "type": "sectional", **stats})
 
     print(json.dumps({"ok": True, "imports": reports}, indent=2))
+    return 0
+
+
+def _resolve_external_meeting_id(conn, args: argparse.Namespace) -> int:
+    if args.meeting_id is not None:
+        return int(args.meeting_id)
+    if args.track and args.date:
+        row = conn.execute(
+            """
+            SELECT external_id FROM meetings
+            WHERE lower(track) = lower(?) AND meeting_date = ?
+            LIMIT 1
+            """,
+            (args.track, args.date),
+        ).fetchone()
+        if not row or not row["external_id"]:
+            raise ValueError(
+                "No meetings.external_id for that track/date. "
+                "Pass --meeting-id (PF MeetingId) or import results/meeting with MeetingId first."
+            )
+        return int(row["external_id"])
+    raise ValueError("Provide --meeting-id or both --track and --date")
+
+
+def cmd_fetch_pf(args: argparse.Namespace) -> int:
+    """Download official PF MeetingSectionals + MeetingBenchmarks (Modeller API)."""
+    conn = connect(args.db)
+    init_db(conn)
+    try:
+        api_key = resolve_api_key(args.api_key)
+        external_meeting_id = _resolve_external_meeting_id(conn, args)
+    except (PfApiError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    # Default: both. If either flag is set, fetch only the selected kinds.
+    if args.sectionals or args.benchmarks:
+        want_sec = bool(args.sectionals)
+        want_bm = bool(args.benchmarks)
+    else:
+        want_sec = True
+        want_bm = True
+
+    paths = default_download_paths(external_meeting_id, args.out)
+    report: dict = {
+        "ok": True,
+        "external_meeting_id": external_meeting_id,
+        "downloads": [],
+        "imports": [],
+    }
+
+    try:
+        if want_sec:
+            if args.csv:
+                body = fetch_meeting_sectionals(
+                    external_meeting_id, api_key=api_key, as_csv=True
+                )
+                path = save_download(body, paths["sectionals_csv"], as_csv=True)
+            else:
+                payload = fetch_meeting_sectionals(
+                    external_meeting_id, api_key=api_key, as_csv=False
+                )
+                path = save_download(payload, paths["sectionals_json"], as_csv=False)
+            report["downloads"].append(str(path))
+            if args.do_import:
+                stats = import_sectionals_file(conn, path)
+                report["imports"].append({"type": "pf_sectionals", **stats})
+        if want_bm:
+            if args.csv:
+                body = fetch_meeting_benchmarks(
+                    external_meeting_id, api_key=api_key, as_csv=True
+                )
+                path = save_download(body, paths["benchmarks_csv"], as_csv=True)
+            else:
+                payload = fetch_meeting_benchmarks(
+                    external_meeting_id, api_key=api_key, as_csv=False
+                )
+                path = save_download(payload, paths["benchmarks_json"], as_csv=False)
+            report["downloads"].append(str(path))
+            if args.do_import:
+                stats = import_benchmarks_file(conn, path)
+                report["imports"].append({"type": "pf_benchmarks", **stats})
+    except PfApiError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(json.dumps(report, indent=2))
+    return 0
+
+
+def cmd_import_pf_sectionals(args: argparse.Namespace) -> int:
+    conn = connect(args.db)
+    init_db(conn)
+    stats = import_sectionals_file(conn, args.path)
+    print(json.dumps({"ok": True, "type": "pf_sectionals", **stats}, indent=2))
+    return 0
+
+
+def cmd_import_pf_benchmarks(args: argparse.Namespace) -> int:
+    conn = connect(args.db)
+    init_db(conn)
+    stats = import_benchmarks_file(conn, args.path)
+    print(json.dumps({"ok": True, "type": "pf_benchmarks", **stats}, indent=2))
     return 0
 
 
@@ -191,6 +327,43 @@ def build_parser() -> argparse.ArgumentParser:
     _add_db_arg(p_inbox)
     p_inbox.add_argument("--inbox", default="data/inbox", help="Folder of uploads")
     p_inbox.set_defaults(func=cmd_import_inbox)
+
+    p_fetch = sub.add_parser(
+        "fetch-pf",
+        help="Download PF MeetingSectionals + MeetingBenchmarks via official Modeller API",
+    )
+    _add_db_arg(p_fetch)
+    p_fetch.add_argument("--meeting-id", type=int, help="Punting Form MeetingId")
+    p_fetch.add_argument("--track", help="Resolve MeetingId from local DB")
+    p_fetch.add_argument("--date", help="Meeting date YYYY-MM-DD (with --track)")
+    p_fetch.add_argument("--api-key", help="PF API key (else PUNTINGFORM_API_KEY)")
+    p_fetch.add_argument("--out", default="data/inbox/pf", help="Download folder")
+    p_fetch.add_argument("--sectionals", action="store_true", help="Fetch sectionals only")
+    p_fetch.add_argument("--benchmarks", action="store_true", help="Fetch benchmarks only")
+    p_fetch.add_argument("--csv", action="store_true", help="Request CSV instead of JSON")
+    p_fetch.add_argument(
+        "--import",
+        dest="do_import",
+        action="store_true",
+        help="Import downloaded files into the DB",
+    )
+    p_fetch.set_defaults(func=cmd_fetch_pf)
+
+    p_ips = sub.add_parser(
+        "import-pf-sectionals",
+        help="Import PF MeetingSectionals JSON/CSV (official API export)",
+    )
+    _add_db_arg(p_ips)
+    p_ips.add_argument("path", help="Path to sectionals JSON or CSV")
+    p_ips.set_defaults(func=cmd_import_pf_sectionals)
+
+    p_ipb = sub.add_parser(
+        "import-pf-benchmarks",
+        help="Import PF MeetingBenchmarks JSON/CSV (official API export)",
+    )
+    _add_db_arg(p_ipb)
+    p_ipb.add_argument("path", help="Path to benchmarks JSON or CSV")
+    p_ipb.set_defaults(func=cmd_import_pf_benchmarks)
 
     p_tip = sub.add_parser("tip", help="Rank runners for a meeting")
     _add_db_arg(p_tip)

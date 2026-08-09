@@ -1,0 +1,44 @@
+[
+  {
+    "meetingId": 241810,
+    "track": "Belmont Park",
+    "meetingDate": "2026-08-01T00:00:00",
+    "raceId": 9001,
+    "raceNumber": 1,
+    "items": [
+      {
+        "horseId": 501,
+        "horseName": "Want A Winner",
+        "tabNo": 5,
+        "to600All": 0.2,
+        "last600All": 1.1,
+        "finishAll": 1.4,
+        "to600Class": 0.1,
+        "last600Class": 0.9,
+        "finishClass": 1.2,
+        "last400All": 0.8,
+        "last200All": 0.7,
+        "last100All": 0.4,
+        "split64All": 0.3,
+        "split42All": 0.5,
+        "split21All": 0.2,
+        "last400Class": 0.6,
+        "last200Class": 0.5,
+        "last100Class": 0.3,
+        "split64Class": 0.2,
+        "split42Class": 0.4,
+        "split21Class": 0.1
+      },
+      {
+        "horseId": 504,
+        "horseName": "Demo Closer",
+        "tabNo": 4,
+        "to600All": -0.4,
+        "last600All": 0.3,
+        "finishAll": -0.2,
+        "finishClass": -0.1,
+        "last200All": 0.1
+      }
+    ]
+  }
+]

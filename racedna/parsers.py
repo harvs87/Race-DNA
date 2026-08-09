@@ -37,6 +37,12 @@ def parse_date(value: Any) -> str | None:
     text = clean(value)
     if text is None:
         return None
+    # ISO-8601 with time / Z
+    if "T" in text:
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00")).date().isoformat()
+        except ValueError:
+            text = text.split("T", 1)[0]
     # Strip time portion noise
     candidates = [
         "%d/%m/%Y %H:%M:%S",
