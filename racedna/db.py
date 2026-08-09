@@ -247,12 +247,54 @@ CREATE TABLE IF NOT EXISTS pf_benchmarks (
     raw_json TEXT
 );
 
+CREATE TABLE IF NOT EXISTS pf_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    import_id INTEGER REFERENCES pf_api_imports(id) ON DELETE CASCADE,
+    meeting_id INTEGER REFERENCES meetings(id),
+    race_id INTEGER REFERENCES races(id),
+    runner_id INTEGER REFERENCES runners(id),
+    horse_id INTEGER REFERENCES horses(id),
+    external_meeting_id TEXT,
+    external_race_id TEXT,
+    race_number INTEGER,
+    tab_no INTEGER,
+    horse_name TEXT,
+    external_horse_id TEXT,
+    run_style TEXT,
+    settle INTEGER,
+    avg_hist_settle REAL,
+    predicted_settle REAL,
+    time_rank INTEGER,
+    time_price REAL,
+    early_time_rank INTEGER,
+    early_time_price REAL,
+    last600_rank INTEGER,
+    last600_price REAL,
+    last400_rank INTEGER,
+    last400_price REAL,
+    last200_rank INTEGER,
+    last200_price REAL,
+    weight_class_rank INTEGER,
+    weight_class_price REAL,
+    taw_class_rank INTEGER,
+    taw_class_price REAL,
+    pfai_rank INTEGER,
+    pfai_score REAL,
+    pfai_price REAL,
+    pf_score REAL,
+    is_reliable INTEGER,
+    raw_json TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_pf_sec_meeting ON pf_sectionals(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_pf_sec_runner ON pf_sectionals(runner_id);
 CREATE INDEX IF NOT EXISTS idx_pf_sec_horse ON pf_sectionals(horse_id);
 CREATE INDEX IF NOT EXISTS idx_pf_bmark_meeting ON pf_benchmarks(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_pf_bmark_runner ON pf_benchmarks(runner_id);
 CREATE INDEX IF NOT EXISTS idx_pf_bmark_race_tab ON pf_benchmarks(race_id, tab_no);
+CREATE INDEX IF NOT EXISTS idx_pf_ratings_meeting ON pf_ratings(meeting_id);
+CREATE INDEX IF NOT EXISTS idx_pf_ratings_runner ON pf_ratings(runner_id);
+CREATE INDEX IF NOT EXISTS idx_pf_ratings_race_tab ON pf_ratings(race_id, tab_no);
 """
 
 MIGRATIONS = [

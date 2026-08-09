@@ -798,3 +798,289 @@ def import_benchmarks_file(conn: sqlite3.Connection, path: str | Path) -> dict[s
     if path.suffix.lower() == ".json":
         return import_benchmarks_payload(conn, load_json_payload(path), source=str(path))
     return import_benchmarks_csv_rows(conn, load_csv_rows(path), source=str(path))
+
+
+def _normalize_run_style(value: Any) -> str | None:
+    text = clean(value)
+    if not text:
+        return None
+    t = text.lower().replace(" ", "")
+    mapping = {
+        "ld": "Leader",
+        "leader": "Leader",
+        "on": "On Pace",
+        "onpace": "On Pace",
+        "op": "On Pace",
+        "mf": "Midfield",
+        "midfield": "Midfield",
+        "mf/bm": "Midfield",
+        "bm": "Backmarker",
+        "back": "Backmarker",
+        "backmarker": "Backmarker",
+        "off": "Off Pace",
+        "offpace": "Off Pace",
+    }
+    # handle "mf/bm"
+    if t in mapping:
+        return mapping[t]
+    for key, label in mapping.items():
+        if key in t:
+            return label
+    return text.strip()
+
+
+def _settle_from_rating(item: dict[str, Any]) -> int | None:
+    pred = parse_float(_get(item, "predictedSettlePostion", "predictedSettlePosition"))
+    avg = parse_float(
+        _get(item, "averageHistoricalSettlePosition", "AverageHistoricalSettlePosition")
+    )
+    if pred is not None and pred > 0:
+        return int(round(pred))
+    if avg is not None and 0 < avg <= 20:
+        return int(round(avg))
+    return None
+
+
+def import_ratings_payload(
+    conn: sqlite3.Connection,
+    payload: Any,
+    *,
+    source: str,
+) -> dict[str, int]:
+    """Import MeetingRatings rows (flat list of runners)."""
+    rows = _as_list(payload)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO pf_api_imports (kind, source_path, external_meeting_id, imported_at)
+        VALUES ('ratings', ?, NULL, ?)
+        """,
+        (source, _now()),
+    )
+    import_id = cur.lastrowid
+    runners_n = 0
+    linked_n = 0
+    meeting_ext: str | None = None
+
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        meeting_ext = clean(str(_get(item, "meetingId") or meeting_ext or ""))
+        track = clean(_get(item, "track"))
+        meeting_date = parse_date(_get(item, "meetingDate"))
+        race_no = parse_int(_get(item, "raceNo", "raceNumber"))
+        race_ext = _get(item, "raceId")
+        tab_no = parse_int(_get(item, "tabNo", "tabNumber"))
+        horse_name = clean(_get(item, "runnerName", "horseName"))
+        horse_ext = _get(item, "runnerId", "horseId")
+        run_style = _normalize_run_style(_get(item, "runStyle"))
+        settle = _settle_from_rating(item)
+
+        meeting_id = _ensure_meeting(
+            conn,
+            external_id=meeting_ext,
+            track=track,
+            meeting_date=meeting_date,
+        )
+        race_id = _ensure_race(
+            conn,
+            meeting_id,
+            race_number=race_no,
+            external_race_id=race_ext,
+        )
+        runner_id, horse_id = _find_runner(
+            conn,
+            race_id,
+            tab_no=tab_no,
+            horse_name=horse_name,
+            horse_external_id=horse_ext,
+        )
+        if horse_id is None:
+            horse_id = _ensure_horse(conn, name=horse_name, external_id=horse_ext)
+        if horse_id is not None and (run_style or settle is not None):
+            cur.execute(
+                """
+                UPDATE horses SET
+                    run_style = COALESCE(?, run_style),
+                    settle = COALESCE(?, settle)
+                WHERE id = ?
+                """,
+                (run_style, settle, horse_id),
+            )
+        if runner_id is not None:
+            linked_n += 1
+
+        existing = None
+        if race_id is not None and tab_no is not None:
+            existing = cur.execute(
+                """
+                SELECT id FROM pf_ratings
+                WHERE race_id = ? AND tab_no = ?
+                LIMIT 1
+                """,
+                (race_id, tab_no),
+            ).fetchone()
+
+        values = (
+            import_id,
+            meeting_id,
+            race_id,
+            runner_id,
+            horse_id,
+            meeting_ext,
+            str(race_ext) if race_ext is not None else None,
+            race_no,
+            tab_no,
+            horse_name,
+            str(horse_ext) if horse_ext is not None else None,
+            run_style,
+            settle,
+            parse_float(_get(item, "averageHistoricalSettlePosition")),
+            parse_float(_get(item, "predictedSettlePostion", "predictedSettlePosition")),
+            parse_int(_get(item, "timeRank")),
+            parse_float(_get(item, "timePrice")),
+            parse_int(_get(item, "earlyTimeRank")),
+            parse_float(_get(item, "earlyTimePrice")),
+            parse_int(_get(item, "last600TimeRank")),
+            parse_float(_get(item, "last600TimePrice")),
+            parse_int(_get(item, "last400TimeRank")),
+            parse_float(_get(item, "last400TimePrice")),
+            parse_int(_get(item, "last200TimeRank")),
+            parse_float(_get(item, "last200TimePrice")),
+            parse_int(_get(item, "weightClassRank")),
+            parse_float(_get(item, "weightClassPrice")),
+            parse_int(_get(item, "timeAdjustedWeightClassRank")),
+            parse_float(_get(item, "timeAdjustedWeightClassPrice")),
+            parse_int(_get(item, "pfaiRank")),
+            parse_float(_get(item, "pfaiScore")),
+            parse_float(_get(item, "pfaiPrice")),
+            parse_float(_get(item, "pfScore")),
+            1 if _get(item, "isReliable") in (True, 1, "1", "true", "True") else 0,
+            json.dumps(item),
+        )
+        if existing:
+            cur.execute(
+                """
+                UPDATE pf_ratings SET
+                    import_id=?, meeting_id=?, race_id=?, runner_id=?, horse_id=?,
+                    external_meeting_id=?, external_race_id=?, race_number=?, tab_no=?,
+                    horse_name=?, external_horse_id=?,
+                    run_style=?, settle=?, avg_hist_settle=?, predicted_settle=?,
+                    time_rank=?, time_price=?,
+                    early_time_rank=?, early_time_price=?,
+                    last600_rank=?, last600_price=?,
+                    last400_rank=?, last400_price=?,
+                    last200_rank=?, last200_price=?,
+                    weight_class_rank=?, weight_class_price=?,
+                    taw_class_rank=?, taw_class_price=?,
+                    pfai_rank=?, pfai_score=?, pfai_price=?, pf_score=?,
+                    is_reliable=?, raw_json=?
+                WHERE id=?
+                """,
+                values + (existing["id"],),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO pf_ratings (
+                    import_id, meeting_id, race_id, runner_id, horse_id,
+                    external_meeting_id, external_race_id, race_number, tab_no,
+                    horse_name, external_horse_id,
+                    run_style, settle, avg_hist_settle, predicted_settle,
+                    time_rank, time_price,
+                    early_time_rank, early_time_price,
+                    last600_rank, last600_price,
+                    last400_rank, last400_price,
+                    last200_rank, last200_price,
+                    weight_class_rank, weight_class_price,
+                    taw_class_rank, taw_class_price,
+                    pfai_rank, pfai_score, pfai_price, pf_score,
+                    is_reliable, raw_json
+                ) VALUES (
+                    ?,?,?,?,?,
+                    ?,?,?,?,
+                    ?,?,
+                    ?,?,?,?,
+                    ?,?,
+                    ?,?,
+                    ?,?,
+                    ?,?,
+                    ?,?,
+                    ?,?,
+                    ?,?,
+                    ?,?,?,?,
+                    ?,?
+                )
+                """,
+                values,
+            )
+        runners_n += 1
+
+    if meeting_ext:
+        cur.execute(
+            "UPDATE pf_api_imports SET external_meeting_id = ? WHERE id = ?",
+            (meeting_ext, import_id),
+        )
+    conn.commit()
+    return {
+        "import_id": import_id,
+        "runners": runners_n,
+        "linked_runners": linked_n,
+        "external_meeting_id": int(meeting_ext) if meeting_ext and str(meeting_ext).isdigit() else 0,
+    }
+
+
+def import_ratings_csv_rows(
+    conn: sqlite3.Connection,
+    rows: Iterable[dict[str, str]],
+    *,
+    source: str,
+) -> dict[str, int]:
+    items = []
+    for row in rows:
+        items.append(
+            {
+                "meetingId": _get(row, "MeetingId", "meetingId"),
+                "track": _get(row, "Track", "track"),
+                "meetingDate": _get(row, "MeetingDate", "meetingDate"),
+                "raceId": _get(row, "RaceId", "raceId"),
+                "raceNo": _get(row, "RaceNo", "RaceNumber", "raceNo"),
+                "tabNo": _get(row, "TabNo", "tabNo"),
+                "runnerName": _get(row, "RunnerName", "HorseName", "runnerName"),
+                "runnerId": _get(row, "RunnerId", "runnerId"),
+                "runStyle": _get(row, "RunStyle", "runStyle"),
+                "predictedSettlePostion": _get(
+                    row, "PredictedSettlePostion", "PredictedSettlePosition"
+                ),
+                "averageHistoricalSettlePosition": _get(
+                    row, "AverageHistoricalSettlePosition"
+                ),
+                "timeRank": _get(row, "TimeRank"),
+                "timePrice": _get(row, "TimePrice"),
+                "earlyTimeRank": _get(row, "EarlyTimeRank"),
+                "earlyTimePrice": _get(row, "EarlyTimePrice"),
+                "last600TimeRank": _get(row, "Last600TimeRank"),
+                "last600TimePrice": _get(row, "Last600TimePrice"),
+                "last400TimeRank": _get(row, "Last400TimeRank"),
+                "last400TimePrice": _get(row, "Last400TimePrice"),
+                "last200TimeRank": _get(row, "Last200TimeRank"),
+                "last200TimePrice": _get(row, "Last200TimePrice"),
+                "weightClassRank": _get(row, "WeightClassRank"),
+                "weightClassPrice": _get(row, "WeightClassPrice"),
+                "timeAdjustedWeightClassRank": _get(row, "TimeAdjustedWeightClassRank"),
+                "timeAdjustedWeightClassPrice": _get(row, "TimeAdjustedWeightClassPrice"),
+                "pfaiRank": _get(row, "PfaiRank", "PFAIRank"),
+                "pfaiScore": _get(row, "PfaiScore", "PFAIScore"),
+                "pfaiPrice": _get(row, "PfaiPrice", "PFAIPrice"),
+                "pfScore": _get(row, "PFScore", "PfScore"),
+                "isReliable": _get(row, "IsReliable", "isReliable"),
+            }
+        )
+    return import_ratings_payload(conn, items, source=source)
+
+
+def import_ratings_file(conn: sqlite3.Connection, path: str | Path) -> dict[str, int]:
+    path = Path(path)
+    if path.suffix.lower() == ".json":
+        return import_ratings_payload(conn, load_json_payload(path), source=str(path))
+    return import_ratings_csv_rows(conn, load_csv_rows(path), source=str(path))

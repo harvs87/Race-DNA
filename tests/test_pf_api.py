@@ -8,10 +8,15 @@ import pytest
 
 from racedna.db import connect, init_db
 from racedna.import_meeting import import_meeting
-from racedna.import_pf_api import import_benchmarks_file, import_sectionals_file
+from racedna.import_pf_api import (
+    import_benchmarks_file,
+    import_ratings_file,
+    import_sectionals_file,
+)
 from racedna.pf_api import (
     PfApiError,
     fetch_meeting_benchmarks,
+    fetch_meeting_ratings,
     fetch_meeting_sectionals,
     resolve_api_key,
 )
@@ -126,6 +131,93 @@ def test_import_pf_csv_variants(tmp_path: Path):
     bm = import_benchmarks_file(conn, FIXTURES / "241810_benchmarks.csv")
     assert sec["runners"] == 2
     assert bm["horses"] == 2
+
+
+def test_import_pf_ratings_and_score(tmp_path: Path):
+    db = tmp_path / "ratings.db"
+    conn = connect(db)
+    init_db(conn)
+    import_meeting(conn, MEETING_CSV)
+    conn.execute(
+        "UPDATE meetings SET external_id = ? WHERE track = ? AND meeting_date = ?",
+        ("241810", "Belmont Park", "2026-08-01"),
+    )
+    conn.commit()
+
+    fixture = FIXTURES / "241810_ratings.json"
+    if not fixture.exists():
+        # minimal inline fixture if file missing
+        payload = [
+            {
+                "meetingId": 241810,
+                "track": "Belmont Park",
+                "meetingDate": "2026-08-01T00:00:00",
+                "raceId": 9001,
+                "raceNo": 1,
+                "tabNo": 5,
+                "runnerName": "Want A Winner",
+                "runnerId": 501,
+                "runStyle": "ld",
+                "predictedSettlePostion": 2,
+                "last600TimeRank": 1,
+                "last200TimeRank": 2,
+                "last400TimeRank": 1,
+                "earlyTimeRank": 4,
+                "timeRank": 2,
+                "pfaiScore": 78,
+                "pfaiRank": 1,
+                "isReliable": True,
+            }
+        ]
+        fixture.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    stats = import_ratings_file(conn, fixture)
+    assert stats["runners"] >= 1
+    assert stats["linked_runners"] >= 1
+
+    tips = score_meeting(
+        conn,
+        track="Belmont Park",
+        meeting_date="2026-08-01",
+        going="Soft",
+    )
+    r1 = tips_by_race(tips, top_n=8)[1]
+    want = next(t for t in r1 if t.horse == "Want A Winner")
+    joined = " ".join(want.reasons).lower()
+    assert "pf" in joined and ("l600" in joined or "l200" in joined or "ai" in joined)
+
+
+def test_fetch_meeting_ratings(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PUNTINGFORM_API_KEY", "k")
+
+    class FakeResp:
+        status = 200
+        headers = type(
+            "H",
+            (),
+            {
+                "get_content_charset": lambda self: "utf-8",
+                "get_content_type": lambda self: "application/json",
+            },
+        )()
+
+        def read(self):
+            return json.dumps(
+                {"statusCode": 200, "payLoad": [{"meetingId": 1, "tabNo": 1}]}
+            ).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def fake_open(req, timeout=60):
+        assert "MeetingRatings" in req.full_url
+        return FakeResp()
+
+    data = fetch_meeting_ratings(1, opener=fake_open)
+    assert data[0]["tabNo"] == 1
 
 
 def test_fetch_benchmarks_csv(monkeypatch: pytest.MonkeyPatch):

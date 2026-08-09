@@ -31,25 +31,20 @@ python3 -m racedna backtest --track "Belmont Park" --date 2026-08-01 --top 1
 3. Run `python3 -m racedna tip` for ranked shortlists with reasons
 4. After the meeting, import results and run `python3 -m racedna backtest` to track strike rate / POT
 
-### Official PF sectionals + benchmarks (preferred)
+### Official PF ratings (Starter+ — no Modeller needed)
 
-Do **not** scrape the website. Punting Form exposes official endpoints (Modeller / commercial):
-
-- `GET https://api.puntingform.com.au/v2/Ratings/MeetingSectionals`
-- `GET https://api.puntingform.com.au/v2/Ratings/MeetingBenchmarks`
-- CSV variants: `.../MeetingSectionals/csv`, `.../MeetingBenchmarks/csv`
+Do **not** scrape the website. With a normal PF API key you can pull **MeetingRatings**, which already includes sectional time ranks, run style, settle, and PF AI scores:
 
 ```bash
-export PUNTINGFORM_API_KEY='your-modeller-key'
-# After meeting CSV/results are imported (so MeetingId is known):
+export PUNTINGFORM_API_KEY='your-key'
 python3 -m racedna fetch-pf --meeting-id 241810 --import
-# or resolve MeetingId from the local DB:
+# or:
 python3 -m racedna fetch-pf --track "Belmont Park" --date 2026-08-01 --import
 ```
 
-Files land in `data/inbox/pf/` and are imported into `pf_sectionals` / `pf_benchmarks`. The tipper uses finish/L600/L200 benchmark lengths when present.
+Files land in `data/inbox/pf/` (`*_ratings.json`) and import into `pf_ratings`. The tipper uses L600 / L400 / L200 / early time ranks plus PF AI.
 
-If you get HTTP 403 on these endpoints, the key is valid for Starter/Pro (form/results/ratings) but **not** Modeller. Upgrade at [puntingform.com.au/products/modeller](https://puntingform.com.au/products/modeller), then refresh `PUNTINGFORM_API_KEY`.
+Raw MeetingSectionals / MeetingBenchmarks need Modeller and are optional (`--sectionals` / `--benchmarks`). Without Modeller, use ratings + screenshot sidecars.
 
 ### Sectional screenshots (fallback)
 
@@ -75,7 +70,8 @@ Situational signals outweigh raw career win rate:
 - Race-relative normalisation so one fat career WR doesn’t dominate
 - Optional `--going Soft` override when the card has no official condition yet
 - Screenshot sectionals: run style / settle, closer patterns, L6/L2, fast-pace handling
-- Official PF benchmarks: finish / L600 / L200 / class lengths when fetched via API
+- Official PF ratings: L600/L200/early ranks, run style, PF AI (Starter+)
+- Optional Modeller benchmarks/sectionals when that plan is available
 
 ## Commands
 
@@ -85,9 +81,10 @@ Situational signals outweigh raw career win rate:
 | `racedna import-meeting PATH` | Import meeting/form CSV |
 | `racedna import-results PATH` | Import results CSV |
 | `racedna import-inbox` | Import CSVs + sectionals from `data/inbox` |
-| `racedna fetch-pf` | Download PF sectionals + benchmarks (Modeller API) |
-| `racedna import-pf-sectionals PATH` | Import official MeetingSectionals JSON/CSV |
-| `racedna import-pf-benchmarks PATH` | Import official MeetingBenchmarks JSON/CSV |
+| `racedna fetch-pf` | Download PF MeetingRatings (optional Modeller kinds) |
+| `racedna import-pf-ratings PATH` | Import MeetingRatings JSON/CSV |
+| `racedna import-pf-sectionals PATH` | Import MeetingSectionals JSON/CSV (Modeller) |
+| `racedna import-pf-benchmarks PATH` | Import MeetingBenchmarks JSON/CSV (Modeller) |
 | `racedna import-sectionals PATH` | Import screenshot / `.sectional.txt` / `.sectional.json` |
 | `racedna tip` | Rank runners (`--top N`, `--json`) |
 | `racedna backtest` | Evaluate tips vs results |

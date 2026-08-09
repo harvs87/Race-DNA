@@ -207,6 +207,30 @@ def fetch_meeting_benchmarks(
     )
 
 
+def fetch_meeting_ratings(
+    meeting_id: int,
+    *,
+    api_key: str | None = None,
+    as_csv: bool = False,
+    opener: Callable[..., Any] | None = None,
+) -> Any:
+    """MeetingRatings — available to Starter subscriptions and up (includes sectional ranks)."""
+    key = resolve_api_key(api_key)
+    if as_csv:
+        return fetch_csv(
+            "/v2/Ratings/MeetingRatings/csv",
+            meeting_id=meeting_id,
+            api_key=key,
+            opener=opener,
+        )
+    return fetch_json(
+        "/v2/Ratings/MeetingRatings",
+        meeting_id=meeting_id,
+        api_key=key,
+        opener=opener,
+    )
+
+
 def save_download(
     payload: Any,
     path: str | Path,
@@ -225,6 +249,8 @@ def save_download(
 def default_download_paths(meeting_id: int, out_dir: str | Path = "data/inbox/pf") -> dict[str, Path]:
     out = Path(out_dir)
     return {
+        "ratings_json": out / f"{meeting_id}_ratings.json",
+        "ratings_csv": out / f"{meeting_id}_ratings.csv",
         "sectionals_json": out / f"{meeting_id}_sectionals.json",
         "sectionals_csv": out / f"{meeting_id}_sectionals.csv",
         "benchmarks_json": out / f"{meeting_id}_benchmarks.json",

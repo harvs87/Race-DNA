@@ -459,6 +459,70 @@ def _style_barrier_score(
     return pts, reasons
 
 
+def _pf_ratings_score(rating: sqlite3.Row | None) -> tuple[float, list[str]]:
+    """Score from MeetingRatings (Starter+): sectional time ranks + PF AI."""
+    if rating is None:
+        return 0.0, []
+    reasons: list[str] = []
+    pts = 0.0
+
+    def _rank_pts(rank: int | None, label: str, weight: float) -> float:
+        if rank is None or rank <= 0:
+            return 0.0
+        if rank == 1:
+            bonus = 4.0 * weight
+        elif rank == 2:
+            bonus = 2.8 * weight
+        elif rank == 3:
+            bonus = 1.8 * weight
+        elif rank <= 5:
+            bonus = 0.8 * weight
+        else:
+            bonus = max(-1.5 * weight, (6 - rank) * 0.25 * weight)
+        reasons.append(f"PF {label} rank #{rank} ({bonus:+.1f})")
+        return bonus
+
+    pts += _rank_pts(
+        rating["last600_rank"] if "last600_rank" in rating.keys() else None,
+        "L600",
+        1.2,
+    )
+    pts += _rank_pts(
+        rating["last200_rank"] if "last200_rank" in rating.keys() else None,
+        "L200",
+        1.0,
+    )
+    pts += _rank_pts(
+        rating["last400_rank"] if "last400_rank" in rating.keys() else None,
+        "L400",
+        0.7,
+    )
+    pts += _rank_pts(
+        rating["early_time_rank"] if "early_time_rank" in rating.keys() else None,
+        "early",
+        0.5,
+    )
+    pts += _rank_pts(
+        rating["time_rank"] if "time_rank" in rating.keys() else None,
+        "time",
+        0.6,
+    )
+
+    pfai = rating["pfai_score"] if "pfai_score" in rating.keys() else None
+    if pfai is not None and pfai > 0:
+        # typical scores ~40-90; centre around 55
+        ai_pts = max(-2.0, min(5.0, (float(pfai) - 55.0) / 6.0))
+        pts += ai_pts
+        reasons.append(f"PF AI score {float(pfai):.0f} ({ai_pts:+.1f})")
+
+    style = rating["run_style"] if "run_style" in rating.keys() else None
+    settle = rating["settle"] if "settle" in rating.keys() else None
+    if style:
+        reasons.append(f"PF run style {style}" + (f" settle {settle}" if settle else ""))
+
+    return pts, reasons
+
+
 def _pf_benchmark_score(bmark: sqlite3.Row | None) -> tuple[float, list[str]]:
     """Score from official PF MeetingBenchmarks (lengths vs par; higher = better)."""
     if bmark is None:
@@ -585,6 +649,7 @@ def _score_runner(
     field_size: int,
     pf_benchmark: sqlite3.Row | None = None,
     pf_sectional: sqlite3.Row | None = None,
+    pf_rating: sqlite3.Row | None = None,
 ) -> tuple[float, list[str]]:
     parts: list[tuple[float, list[str]]] = [
         _career_base(runner),
@@ -592,6 +657,7 @@ def _score_runner(
         _track_distance_score(form_rows, runner, track, distance),
         _recent_form_score(form_rows, race_class),
         _freshness_score(form_rows, meeting_date, runner),
+        _pf_ratings_score(pf_rating),
         _pf_benchmark_score(pf_benchmark),
         _pf_meeting_sectional_score(pf_sectional),
         _sectional_screenshot_score(sectional_rows, distance),
@@ -619,8 +685,14 @@ def _score_runner(
         "soft",
         "heavy",
         "wet",
-        "pf finish",
         "pf l600",
+        "pf l200",
+        "pf l400",
+        "pf ai",
+        "pf time",
+        "pf early",
+        "pf run style",
+        "pf finish",
         "pf class",
         "pf meeting",
         "sectional",
@@ -730,6 +802,18 @@ def score_meeting(
                 """,
                 (runner["id"], race["id"], runner["tab_no"], runner["id"]),
             ).fetchone()
+            pf_rating = cur.execute(
+                """
+                SELECT * FROM pf_ratings
+                WHERE runner_id = ?
+                   OR (race_id = ? AND tab_no = ?)
+                ORDER BY
+                    CASE WHEN runner_id = ? THEN 0 ELSE 1 END,
+                    id DESC
+                LIMIT 1
+                """,
+                (runner["id"], race["id"], runner["tab_no"], runner["id"]),
+            ).fetchone()
             # Prefer prior-meeting sectionals for this horse (not today's card)
             pf_sectional = cur.execute(
                 """
@@ -753,6 +837,7 @@ def score_meeting(
                 field_size=len(runners),
                 pf_benchmark=pf_benchmark,
                 pf_sectional=pf_sectional,
+                pf_rating=pf_rating,
             )
             raw.append((total, reasons, runner))
 
