@@ -172,8 +172,8 @@ export function App() {
           {view === "import-meeting" && (
             <ImportView
               title="Import Meeting CSV"
-              description="Upload a Punting Form Meeting CSV (Track, RaceNumber, TabNo, Runner). Wizard-style CSVs are also accepted. TAB numbers are stored exactly, including 10+."
-              sampleHint="Sample: samples/meeting-punting-form.csv (columns MeetingId, MeetingDate, Track, RaceNumber, TabNo, Runner, Last10, …)"
+              description="Upload a real Punting Form Meeting CSV (track, race number, horse number, horse name, …). Form-expanded rows are collapsed per horse. TAB/horse numbers are stored as exact integers."
+              sampleHint="Real PF columns include: meeting date, track, race number, start time, distance, race name, horse name, horse number, horse jockey, horse barrier, horse trainer, horse last10, …"
               onImport={importMeetingCsv}
               onImported={(report) => {
                 void refreshLists(report.meetingId ?? null).then(() => {

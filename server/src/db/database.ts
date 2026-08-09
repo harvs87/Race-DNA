@@ -16,6 +16,40 @@ export function getDbPath(): string {
   return resolve(REPO_ROOT, "data", "racedna.sqlite");
 }
 
+function migrate(dbInstance: DatabaseSync): void {
+  const raceCols = dbInstance.prepare(`PRAGMA table_info(races)`).all() as Array<{ name: string }>;
+  const raceColNames = new Set(raceCols.map((col) => col.name));
+  if (!raceColNames.has("start_time")) {
+    dbInstance.exec(`ALTER TABLE races ADD COLUMN start_time TEXT`);
+  }
+  if (!raceColNames.has("extras")) {
+    dbInstance.exec(`ALTER TABLE races ADD COLUMN extras TEXT`);
+  }
+
+  const runnerCols = dbInstance
+    .prepare(`PRAGMA table_info(runners)`)
+    .all() as Array<{ name: string }>;
+  const runnerColNames = new Set(runnerCols.map((col) => col.name));
+  const runnerAlters: Array<[string, string]> = [
+    ["extras", "TEXT"],
+    ["form_history", "TEXT"],
+    ["age", "INTEGER"],
+    ["sex", "TEXT"],
+    ["sire", "TEXT"],
+    ["dam", "TEXT"],
+    ["claim", "REAL"],
+    ["last10", "TEXT"],
+    ["record", "TEXT"],
+    ["prize_money", "TEXT"],
+    ["punting_form_horse_id", "TEXT"],
+  ];
+  for (const [name, type] of runnerAlters) {
+    if (!runnerColNames.has(name)) {
+      dbInstance.exec(`ALTER TABLE runners ADD COLUMN ${name} ${type}`);
+    }
+  }
+}
+
 export function openDatabase(path = getDbPath()): DatabaseSync {
   if (db && dbPath === path) return db;
 
@@ -51,6 +85,8 @@ export function openDatabase(path = getDbPath()): DatabaseSync {
       distance_furlongs REAL NOT NULL,
       going TEXT NOT NULL,
       class_name TEXT,
+      start_time TEXT,
+      extras TEXT,
       UNIQUE(meeting_id, race_number)
     );
 
@@ -76,6 +112,17 @@ export function openDatabase(path = getDbPath()): DatabaseSync {
       odds_source TEXT,
       finish_position INTEGER,
       scratched INTEGER NOT NULL DEFAULT 0,
+      extras TEXT,
+      form_history TEXT,
+      age INTEGER,
+      sex TEXT,
+      sire TEXT,
+      dam TEXT,
+      claim REAL,
+      last10 TEXT,
+      record TEXT,
+      prize_money TEXT,
+      punting_form_horse_id TEXT,
       UNIQUE(race_id, tab_number)
     );
 
@@ -83,6 +130,7 @@ export function openDatabase(path = getDbPath()): DatabaseSync {
     CREATE INDEX IF NOT EXISTS idx_runners_race ON runners(race_id);
     CREATE INDEX IF NOT EXISTS idx_runners_tab ON runners(race_id, tab_number);
   `);
+  migrate(next);
 
   db = next;
   dbPath = path;

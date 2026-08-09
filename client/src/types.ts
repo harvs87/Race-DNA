@@ -46,6 +46,7 @@ export interface RaceDetail {
   course: string;
   date?: string;
   raceNumber: number;
+  startTime?: string;
   distanceFurlongs: number;
   distanceMeters?: number;
   going: Going;

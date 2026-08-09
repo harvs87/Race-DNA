@@ -40,15 +40,24 @@ function meetingStats(races: Race[]): Pick<
   };
 }
 
+function parseJson<T>(value: unknown, fallback: T): T {
+  if (value === null || value === undefined || value === "") return fallback;
+  try {
+    return JSON.parse(String(value)) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 function rowToHorse(row: Record<string, unknown>): Horse {
   return {
     id: String(row.id),
     tabNumber: Number(row.tab_number),
     name: String(row.name),
-    recentForm: JSON.parse(String(row.recent_form || "[]")) as number[],
+    recentForm: parseJson<number[]>(row.recent_form, []),
     speedFigure: Number(row.speed_figure),
     optimalDistanceFurlongs: Number(row.optimal_distance_furlongs),
-    preferredGoing: JSON.parse(String(row.preferred_going || '["good"]')) as Going[],
+    preferredGoing: parseJson<Going[]>(row.preferred_going, ["good"]),
     classRating: Number(row.class_rating),
     jockeyWinRate: Number(row.jockey_win_rate),
     trainerWinRate: Number(row.trainer_win_rate),
@@ -66,6 +75,19 @@ function rowToHorse(row: Record<string, unknown>): Horse {
         ? undefined
         : Number(row.finish_position),
     scratched: Number(row.scratched) === 1,
+    age: row.age === null || row.age === undefined ? undefined : Number(row.age),
+    sex: row.sex ? String(row.sex) : undefined,
+    sire: row.sire ? String(row.sire) : undefined,
+    dam: row.dam ? String(row.dam) : undefined,
+    claim: row.claim === null || row.claim === undefined ? undefined : Number(row.claim),
+    last10: row.last10 ? String(row.last10) : undefined,
+    record: row.record ? String(row.record) : undefined,
+    prizeMoney: row.prize_money ? String(row.prize_money) : undefined,
+    puntingFormHorseId: row.punting_form_horse_id
+      ? String(row.punting_form_horse_id)
+      : undefined,
+    formHistory: parseJson(row.form_history, undefined),
+    extras: parseJson(row.extras, undefined),
   };
 }
 
@@ -91,6 +113,7 @@ function loadRacesForMeeting(meetingId: string, course: string, date?: string): 
       course,
       date: date || undefined,
       raceNumber: Number(raceRow.race_number),
+      startTime: raceRow.start_time ? String(raceRow.start_time) : undefined,
       distanceFurlongs: Number(raceRow.distance_furlongs),
       distanceMeters:
         raceRow.distance_meters === null || raceRow.distance_meters === undefined
@@ -98,6 +121,7 @@ function loadRacesForMeeting(meetingId: string, course: string, date?: string): 
           : Number(raceRow.distance_meters),
       going: String(raceRow.going) as Going,
       className: raceRow.class_name ? String(raceRow.class_name) : undefined,
+      extras: parseJson(raceRow.extras, undefined),
       runners,
     };
   });
@@ -130,15 +154,17 @@ function persistMeeting(meeting: MeetingDetail, preserveImportedAt?: string): vo
 
     const insertRace = db.prepare(
       `INSERT INTO races (
-        id, meeting_id, race_number, name, distance_meters, distance_furlongs, going, class_name
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, meeting_id, race_number, name, distance_meters, distance_furlongs, going, class_name,
+        start_time, extras
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const insertRunner = db.prepare(
       `INSERT INTO runners (
         id, race_id, tab_number, name, recent_form, speed_figure, optimal_distance_furlongs,
         preferred_going, class_rating, jockey_win_rate, trainer_win_rate, days_since_last_run,
-        barrier, weight_kg, jockey, trainer, win_odds, place_odds, odds_source, finish_position, scratched
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        barrier, weight_kg, jockey, trainer, win_odds, place_odds, odds_source, finish_position, scratched,
+        extras, form_history, age, sex, sire, dam, claim, last10, record, prize_money, punting_form_horse_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     for (const race of meeting.races) {
@@ -151,6 +177,8 @@ function persistMeeting(meeting: MeetingDetail, preserveImportedAt?: string): vo
         race.distanceFurlongs,
         race.going,
         race.className ?? null,
+        race.startTime ?? null,
+        race.extras ? JSON.stringify(race.extras) : null,
       );
 
       for (const runner of race.runners) {
@@ -176,6 +204,17 @@ function persistMeeting(meeting: MeetingDetail, preserveImportedAt?: string): vo
           runner.oddsSource ?? null,
           runner.finishPosition ?? null,
           runner.scratched ? 1 : 0,
+          runner.extras ? JSON.stringify(runner.extras) : null,
+          runner.formHistory ? JSON.stringify(runner.formHistory) : null,
+          runner.age ?? null,
+          runner.sex ?? null,
+          runner.sire ?? null,
+          runner.dam ?? null,
+          runner.claim ?? null,
+          runner.last10 ?? null,
+          runner.record ?? null,
+          runner.prizeMoney ?? null,
+          runner.puntingFormHorseId ?? null,
         );
       }
     }

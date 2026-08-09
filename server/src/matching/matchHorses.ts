@@ -25,16 +25,18 @@ export function normaliseMeeting(value: string): string {
     .trim();
 }
 
-/** Normalise ISO-ish dates to YYYY-MM-DD when possible. */
+/** Normalise ISO-ish / AU dates to YYYY-MM-DD when possible. */
 export function normaliseDate(value?: string): string | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
   const iso = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
   if (iso) return iso[1];
-  const dmy = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  // 08/08/2026 or 08/08/2026 00:00:00 (day/month/year — Punting Form AU)
+  const dmy = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
   if (dmy) {
     return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
   }
+  // 08-Aug-2026 / 29/07/26 style leftovers via Date.parse
   const parsed = Date.parse(trimmed);
   if (!Number.isNaN(parsed)) return new Date(parsed).toISOString().slice(0, 10);
   return undefined;

@@ -1,10 +1,11 @@
 /** Minimal CSV parser that supports quoted fields and commas inside quotes. */
 export function parseCsv(text: string): { headers: string[]; rows: Record<string, string>[] } {
-  const lines = splitCsvLines(text.trim().replace(/^\uFEFF/, ""));
+  const lines = splitCsvLines(text.replace(/^\uFEFF/, "").replace(/\u0000/g, ""));
   if (lines.length === 0) {
     return { headers: [], rows: [] };
   }
 
+  // Trim headers so values like " race id" become "race id".
   const headers = splitCsvRow(lines[0]).map((header) => header.trim());
   const rows = lines
     .slice(1)
@@ -90,8 +91,8 @@ export function parseNumber(value: string): number | undefined {
 }
 
 /**
- * Parse a TAB / saddlecloth number.
- * Rejects non-integers so "1.0" style junk and empty values cannot fuzzy-match.
+ * Parse a TAB / saddlecloth / horse number.
+ * Rejects non-integers so values can never fuzzy-match (1 vs 10/13).
  */
 export function parseTabNumber(value: string): number | undefined {
   if (!value) return undefined;
@@ -102,9 +103,18 @@ export function parseTabNumber(value: string): number | undefined {
   return num;
 }
 
-export function detectMeetingCsvFormat(headers: string[]): "punting-form" | "wizard" | "unknown" {
-  const lower = headers.map((header) => header.toLowerCase());
-  if (lower.includes("tabno") || lower.includes("meetingid") || lower.includes("last10")) {
+export function detectMeetingCsvFormat(
+  headers: string[],
+): "punting-form" | "wizard" | "unknown" {
+  const lower = headers.map((header) => header.trim().toLowerCase());
+  if (
+    lower.includes("horse number") ||
+    lower.includes("horse name") ||
+    lower.includes("horse last10") ||
+    lower.includes("tabno") ||
+    lower.includes("meetingid") ||
+    lower.includes("meeting id")
+  ) {
     return "punting-form";
   }
   if (lower.includes("tab number") || lower.includes("meeting")) {

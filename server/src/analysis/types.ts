@@ -1,5 +1,22 @@
 export type Going = "firm" | "good" | "soft" | "heavy";
 
+export interface FormHistoryEntry {
+  meetingDate?: string;
+  track?: string;
+  trackCondition?: string;
+  raceName?: string;
+  distance?: string;
+  className?: string;
+  position?: number;
+  margin?: string;
+  price?: string;
+  jockey?: string;
+  barrier?: string;
+  weight?: string;
+  time?: string;
+  otherRunners?: string;
+}
+
 export interface Horse {
   id: string;
   /** Official TAB / saddlecloth number for the race. */
@@ -30,6 +47,19 @@ export interface Horse {
   /** Official finishing position when results have been imported. */
   finishPosition?: number;
   scratched?: boolean;
+  /** Extra Punting Form identity / form fields retained for later analysis. */
+  age?: number;
+  sex?: string;
+  sire?: string;
+  dam?: string;
+  claim?: number;
+  last10?: string;
+  record?: string;
+  prizeMoney?: string;
+  puntingFormHorseId?: string;
+  formHistory?: FormHistoryEntry[];
+  /** Full source-row column map (and any importer-added keys). */
+  extras?: Record<string, string>;
 }
 
 export interface Race {
@@ -40,10 +70,12 @@ export interface Race {
   /** Meeting date ISO (YYYY-MM-DD) when known. */
   date?: string;
   raceNumber: number;
+  startTime?: string;
   distanceFurlongs: number;
   distanceMeters?: number;
   going: Going;
   className?: string;
+  extras?: Record<string, string>;
   runners: Horse[];
 }
 

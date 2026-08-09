@@ -58,6 +58,7 @@ export function MeetingView({ meeting, loading, error, onOpenRace, onOpenArchive
             </button>
           </div>
           <p className="muted">
+            {race.startTime ? `${race.startTime} · ` : ""}
             {race.distanceMeters ? `${race.distanceMeters}m` : `${race.distanceFurlongs}f`}
             {race.className ? ` · ${race.className}` : ""} · {race.going} · {race.runners.length}{" "}
             runners
