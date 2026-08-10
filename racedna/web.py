@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import traceback
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from racedna import __version__
 from racedna.db import connect, default_db_path, init_db
 from racedna.import_assets import import_race_asset
 from racedna.import_meeting import import_meeting
@@ -20,12 +23,27 @@ ROOT = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(ROOT / "templates"))
 UPLOAD_ROOT = Path("data/uploads")
 ASSET_ROOT = Path("data/inbox/assets")
+ERROR_LOG = Path("data/last_error.txt")
 
 
 def get_db():
     conn = connect(default_db_path())
     init_db(conn)
     return conn
+
+
+def _flash_redirect(path: str, msg: str) -> RedirectResponse:
+    return RedirectResponse(f"{path}?msg={quote_plus(msg)}", status_code=303)
+
+
+def _write_error(exc: BaseException) -> str:
+    text = "".join(traceback.format_exception(exc))
+    try:
+        ERROR_LOG.parent.mkdir(parents=True, exist_ok=True)
+        ERROR_LOG.write_text(text, encoding="utf-8")
+    except OSError:
+        pass
+    return text
 
 
 def create_app() -> FastAPI:
@@ -36,6 +54,30 @@ def create_app() -> FastAPI:
     UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
     ASSET_ROOT.mkdir(parents=True, exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    @app.exception_handler(Exception)
+    async def friendly_errors(request: Request, exc: Exception):
+        # Don't override FastAPI/Starlette HTTPException responses.
+        if isinstance(exc, HTTPException):
+            return HTMLResponse(
+                f"""<!doctype html><html><body style="font-family:sans-serif;padding:2rem">
+                <h1>{exc.status_code}</h1><p>{exc.detail}</p>
+                <p><a href="/">Back home</a></p></body></html>""",
+                status_code=exc.status_code,
+            )
+        detail = _write_error(exc)
+        print(detail)
+        return HTMLResponse(
+            f"""<!doctype html><html><body style="font-family:sans-serif;padding:2rem;max-width:40rem">
+            <h1>RaceDNA error</h1>
+            <p><strong>{type(exc).__name__}:</strong> {exc}</p>
+            <p>Full traceback saved to <code>data/last_error.txt</code> in your Race-DNA folder.</p>
+            <p>You need <strong>v0.5.1+</strong> (shown top-right). Pull, reinstall, restart.</p>
+            <p><a href="/">Back home</a></p>
+            <pre style="white-space:pre-wrap;background:#f4f4f4;padding:1rem;font-size:12px">{detail[-4000:]}</pre>
+            </body></html>""",
+            status_code=500,
+        )
 
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request):
@@ -60,7 +102,7 @@ def create_app() -> FastAPI:
         return TEMPLATES.TemplateResponse(
             request,
             "home.html",
-            {"meetings": meetings, "flash": flash},
+            {"meetings": meetings, "flash": flash, "version": __version__},
         )
 
     @app.post("/upload/meeting")
@@ -72,9 +114,9 @@ def create_app() -> FastAPI:
             shutil.copyfileobj(file.file, fh)
         conn = get_db()
         stats = import_meeting(conn, dest)
-        return RedirectResponse(
-            f"/?msg=Meeting+imported:+{stats.get('races', 0)}+races,+{stats.get('runners', 0)}+runners",
-            status_code=303,
+        return _flash_redirect(
+            "/",
+            f"Meeting imported: {stats.get('races', 0)} races, {stats.get('runners', 0)} runners",
         )
 
     @app.post("/upload/results")
@@ -86,9 +128,9 @@ def create_app() -> FastAPI:
             shutil.copyfileobj(file.file, fh)
         conn = get_db()
         stats = import_results(conn, dest)
-        return RedirectResponse(
-            f"/?msg=Results+imported:+{stats.get('results', 0)}+runners+updated",
-            status_code=303,
+        return _flash_redirect(
+            "/",
+            f"Results imported: {stats.get('results', 0)} runners updated",
         )
 
     @app.get("/meetings/{meeting_id}", response_class=HTMLResponse)
@@ -128,6 +170,7 @@ def create_app() -> FastAPI:
                 "tips": tips,
                 "going": going or "",
                 "flash": flash,
+                "version": __version__,
             },
         )
 
@@ -191,6 +234,7 @@ def create_app() -> FastAPI:
                 "tips": tips,
                 "going": going or race["track_condition"] or "",
                 "flash": flash,
+                "version": __version__,
             },
         )
 
@@ -207,7 +251,7 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "Race not found")
 
         saved: Path | None = None
-        if file and file.filename:
+        if file is not None and file.filename:
             dest = ASSET_ROOT / f"race{race_id}_{kind}_{Path(file.filename).name}"
             with dest.open("wb") as fh:
                 shutil.copyfileobj(file.file, fh)
@@ -224,7 +268,7 @@ def create_app() -> FastAPI:
             race_id=race_id,
             copy_into=None,
         )
-        return RedirectResponse(f"/races/{race_id}?msg=Asset+saved", status_code=303)
+        return _flash_redirect(f"/races/{race_id}", "Asset saved")
 
     @app.post("/races/{race_id}/sectionals")
     async def race_sectionals(
@@ -234,83 +278,105 @@ def create_app() -> FastAPI:
         run_style: str = Form(""),
         settle: str = Form(""),
     ):
-        conn = get_db()
-        race = conn.execute("SELECT id FROM races WHERE id = ?", (race_id,)).fetchone()
-        if not race:
-            raise HTTPException(404, "Race not found")
-        if not file.filename:
-            raise HTTPException(400, "No file")
-
-        settle_val: int | None = None
-        if settle.strip():
-            try:
-                settle_val = int(settle.strip())
-            except ValueError as exc:
-                raise HTTPException(400, "Settle must be a number") from exc
-
-        suffix = Path(file.filename).suffix.lower() or ".png"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=UPLOAD_ROOT) as tmp:
-            shutil.copyfileobj(file.file, tmp)
-            tmp_path = Path(tmp.name)
-
-        keep = ASSET_ROOT / f"race{race_id}_sectionals_{Path(file.filename).name}"
-        shutil.copy2(tmp_path, keep)
-
         try:
-            stats = import_sectional(
-                conn,
-                keep,
-                horse_name=horse_name.strip() or None,
-                run_style=run_style.strip() or None,
-                settle=settle_val,
-            )
-        except Exception as exc:  # noqa: BLE001
-            # Still keep the raw screenshot attached so it isn't lost
+            conn = get_db()
+            race = conn.execute("SELECT id FROM races WHERE id = ?", (race_id,)).fetchone()
+            if not race:
+                return _flash_redirect("/", "Race not found")
+            if not file.filename:
+                return _flash_redirect(f"/races/{race_id}", "No file uploaded")
+
+            settle_val: int | None = None
+            if settle and settle.strip():
+                try:
+                    settle_val = int(settle.strip())
+                except ValueError:
+                    return _flash_redirect(f"/races/{race_id}", "Settle must be a number")
+
+            if not (horse_name or "").strip():
+                # Still stash the screenshot so it isn't lost
+                suffix = Path(file.filename).suffix.lower() or ".png"
+                keep = ASSET_ROOT / f"race{race_id}_sectionals_{Path(file.filename).name}"
+                with keep.open("wb") as fh:
+                    shutil.copyfileobj(file.file, fh)
+                import_race_asset(
+                    conn,
+                    keep,
+                    kind="sectionals",
+                    note="screenshot saved — pick horse and re-import",
+                    race_id=race_id,
+                    copy_into=None,
+                )
+                return _flash_redirect(
+                    f"/races/{race_id}",
+                    "Screenshot saved. Pick the horse (and run style) then save again.",
+                )
+
+            suffix = Path(file.filename).suffix.lower() or ".png"
+            UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+            ASSET_ROOT.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=UPLOAD_ROOT) as tmp:
+                shutil.copyfileobj(file.file, tmp)
+                tmp_path = Path(tmp.name)
+
+            keep = ASSET_ROOT / f"race{race_id}_sectionals_{Path(file.filename).name}"
+            shutil.copy2(tmp_path, keep)
+
+            try:
+                stats = import_sectional(
+                    conn,
+                    keep,
+                    horse_name=horse_name.strip(),
+                    run_style=(run_style or "").strip() or None,
+                    settle=settle_val,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _write_error(exc)
+                import_race_asset(
+                    conn,
+                    keep,
+                    kind="sectionals",
+                    note=f"screenshot saved (parse failed): {exc}",
+                    race_id=race_id,
+                    copy_into=None,
+                )
+                return _flash_redirect(
+                    f"/races/{race_id}",
+                    f"Screenshot saved but could not parse: {exc}",
+                )
+
+            note_bits = [f"sectional: {stats.get('horse_name') or file.filename}"]
+            if stats.get("run_style"):
+                note_bits.append(str(stats["run_style"]))
+            if stats.get("manual"):
+                note_bits.append("manual/screenshot")
             import_race_asset(
                 conn,
                 keep,
                 kind="sectionals",
-                note=f"screenshot saved (parse failed): {exc}",
+                note=" | ".join(note_bits),
                 race_id=race_id,
                 copy_into=None,
             )
-            return RedirectResponse(
-                f"/races/{race_id}?msg=Screenshot+saved+but+could+not+parse:+pick+the+horse+and+try+again",
-                status_code=303,
-            )
 
-        note_bits = [f"sectional: {stats.get('horse_name') or file.filename}"]
-        if stats.get("run_style"):
-            note_bits.append(str(stats["run_style"]))
-        if stats.get("manual"):
-            note_bits.append("manual/screenshot")
-        import_race_asset(
-            conn,
-            keep,
-            kind="sectionals",
-            note=" · ".join(note_bits),
-            race_id=race_id,
-            copy_into=None,
-        )
-
-        horse = stats.get("horse_name") or "horse"
-        rows = stats.get("rows", 0)
-        if rows:
-            msg = f"Sectionals imported for {horse} ({rows} runs)"
-        else:
-            msg = (
-                f"Screenshot saved for {horse}"
-                + (f" · {stats.get('run_style')}" if stats.get("run_style") else "")
-                + " (style saved; table OCR optional)"
+            horse = stats.get("horse_name") or "horse"
+            rows = stats.get("rows", 0)
+            if rows:
+                msg = f"Sectionals imported for {horse} ({rows} runs)"
+            else:
+                style = stats.get("run_style") or "style not set"
+                msg = f"Screenshot saved for {horse} ({style}). Table OCR optional."
+            return _flash_redirect(f"/races/{race_id}", msg)
+        except Exception as exc:  # noqa: BLE001
+            _write_error(exc)
+            return _flash_redirect(
+                f"/races/{race_id}",
+                f"Upload failed: {type(exc).__name__}: {exc}",
             )
-        return RedirectResponse(
-            f"/races/{race_id}?msg=" + msg.replace(" ", "+"),
-            status_code=303,
-        )
 
     @app.get("/health")
     def health():
-        return {"ok": True, "db": str(default_db_path())}
+        return {"ok": True, "db": str(default_db_path()), "version": __version__}
 
     return app
 

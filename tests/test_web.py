@@ -29,6 +29,10 @@ def test_home_and_upload_meeting(client: TestClient):
     r = client.get("/")
     assert r.status_code == 200
     assert "RaceDNA" in r.text
+    assert "v0.5.1" in r.text
+
+    r = client.get("/health")
+    assert r.json()["version"] == "0.5.1"
 
     with MEETING_CSV.open("rb") as fh:
         r = client.post(

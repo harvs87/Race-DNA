@@ -12,7 +12,7 @@ from racedna.sectional_parse import (
     parse_sectional_text,
 )
 
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".heic", ".heif"}
 TEXT_SUFFIXES = {".txt", ".sectional.txt"}
 JSON_SUFFIXES = {".json", ".sectional.json"}
 
