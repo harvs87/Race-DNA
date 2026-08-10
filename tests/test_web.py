@@ -82,6 +82,11 @@ def test_upload_results_and_sectionals(client: TestClient):
     with SECTIONAL_JSON.open("rb") as fh:
         r = client.post(
             "/races/1/sectionals",
+            data={
+                "horse_name": "Want A Winner",
+                "run_style": "Leader (Settle - 2)",
+                "settle": "2",
+            },
             files={"file": ("want_a_winner.sectional.json", fh, "application/json")},
             follow_redirects=False,
         )
@@ -90,3 +95,44 @@ def test_upload_results_and_sectionals(client: TestClient):
     r = client.get("/races/1")
     assert r.status_code == 200
     assert "Want A Winner" in r.text
+
+
+def test_screenshot_only_sectionals_without_ocr(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    from racedna.ocr import OcrUnavailable
+    import racedna.import_sectionals as sec_mod
+
+    def _boom(_path):
+        raise OcrUnavailable("no tesseract in test")
+
+    monkeypatch.setattr(sec_mod, "ocr_image", _boom)
+
+    with MEETING_CSV.open("rb") as fh:
+        client.post("/upload/meeting", files={"file": ("meeting.csv", fh, "text/csv")})
+
+    png = b"\x89PNG\r\n\x1a\n" + b"fake"
+    r = client.post(
+        "/races/1/sectionals",
+        data={
+            "horse_name": "Want A Winner",
+            "run_style": "Leader (Settle - 2)",
+            "settle": "2",
+        },
+        files={"file": ("want.png", png, "image/png")},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    r = client.get("/races/1")
+    assert r.status_code == 200
+    assert "Want A Winner" in r.text
+    # horse style should be applied even without OCR rows
+    from racedna.db import connect
+
+    conn = connect(os.environ["RACEDNA_DB"])
+    horse = conn.execute(
+        "SELECT run_style, settle FROM horses WHERE lower(name)=lower(?)",
+        ("Want A Winner",),
+    ).fetchone()
+    assert horse is not None
+    assert horse["settle"] == 2
+    assert "Leader" in (horse["run_style"] or "")

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from racedna.ocr import ocr_image
+from racedna.ocr import OcrUnavailable, ocr_image
 from racedna.sectional_parse import (
     SectionalHorsePage,
     parse_sectional_json,
@@ -47,7 +48,13 @@ def load_sectional_page(path: str | Path) -> SectionalHorsePage:
         return page
 
     if suffix in IMAGE_SUFFIXES:
-        text = ocr_image(path)
+        try:
+            text = ocr_image(path)
+        except OcrUnavailable:
+            # Screenshot-only path: caller can fill horse/style manually.
+            page = SectionalHorsePage(source=str(path))
+            page.ocr_text = ""
+            return page
         page = parse_sectional_text(text, source=str(path))
         page.ocr_text = text
         return page
@@ -133,9 +140,41 @@ def _link_form_run(
     return row["id"] if row else None
 
 
-def import_sectional(conn: sqlite3.Connection, path: str | Path) -> dict:
+def import_sectional(
+    conn: sqlite3.Connection,
+    path: str | Path,
+    *,
+    horse_name: str | None = None,
+    run_style: str | None = None,
+    settle: int | None = None,
+) -> dict:
+    """Import sectionals from JSON/TXT/screenshot.
+
+    Screenshots work without OCR if you pass horse_name (and ideally
+    run_style / settle). OCR is used when available to fill table rows.
+    """
     path = Path(path)
     page = load_sectional_page(path)
+
+    if horse_name:
+        page.horse_name = horse_name.strip() or page.horse_name
+    if run_style:
+        page.run_style = run_style.strip() or page.run_style
+    if settle is not None:
+        page.settle = settle
+
+    # If OCR/read style includes settle text, keep it when settle unset
+    if page.settle is None and page.run_style:
+        sm = re.search(r"Settle\s*[-:]?\s*(\d+)", page.run_style, re.I)
+        if sm:
+            page.settle = int(sm.group(1))
+
+    if not page.horse_name:
+        raise ValueError(
+            "Could not identify the horse from this screenshot. "
+            "Pick the horse in the form (and optional run style / settle)."
+        )
+
     horse_id = _ensure_horse(conn, page)
     cur = conn.cursor()
     cur.execute(
@@ -215,6 +254,7 @@ def import_sectional(conn: sqlite3.Connection, path: str | Path) -> dict:
         )
 
     conn.commit()
+    ocr_used = bool(page.ocr_text and page.ocr_text.strip())
     return {
         "source": str(path),
         "horse_name": page.horse_name,
@@ -224,6 +264,8 @@ def import_sectional(conn: sqlite3.Connection, path: str | Path) -> dict:
         "rows": len(page.rows),
         "linked_form_runs": linked,
         "import_id": import_id,
+        "ocr_used": ocr_used,
+        "manual": not ocr_used or len(page.rows) == 0,
     }
 
 

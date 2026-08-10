@@ -3,15 +3,40 @@ from __future__ import annotations
 from pathlib import Path
 
 
+class OcrUnavailable(RuntimeError):
+    """Raised when screenshot OCR cannot run (missing deps / tesseract)."""
+
+
+def ocr_available() -> bool:
+    try:
+        import pytesseract
+        from PIL import Image  # noqa: F401
+    except ImportError:
+        return False
+    try:
+        pytesseract.get_tesseract_version()
+    except Exception:  # noqa: BLE001
+        return False
+    return True
+
+
 def ocr_image(path: str | Path, psm: int = 6) -> str:
     """OCR a sectional screenshot with light preprocessing for table text."""
     try:
         import pytesseract
         from PIL import Image, ImageFilter, ImageOps
     except ImportError as exc:  # pragma: no cover
-        raise RuntimeError(
+        raise OcrUnavailable(
             "OCR requires pillow and pytesseract. Install with: "
-            'python3 -m pip install "racedna[ocr]"'
+            'python3 -m pip install -e ".[ocr]"'
+        ) from exc
+
+    try:
+        pytesseract.get_tesseract_version()
+    except Exception as exc:  # noqa: BLE001
+        raise OcrUnavailable(
+            "System Tesseract not found. On Mac: brew install tesseract. "
+            "Or pick the horse + run style in the form — screenshot still saves."
         ) from exc
 
     path = Path(path)

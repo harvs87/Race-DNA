@@ -227,7 +227,13 @@ def create_app() -> FastAPI:
         return RedirectResponse(f"/races/{race_id}?msg=Asset+saved", status_code=303)
 
     @app.post("/races/{race_id}/sectionals")
-    async def race_sectionals(race_id: int, file: UploadFile = File(...)):
+    async def race_sectionals(
+        race_id: int,
+        file: UploadFile = File(...),
+        horse_name: str = Form(""),
+        run_style: str = Form(""),
+        settle: str = Form(""),
+    ):
         conn = get_db()
         race = conn.execute("SELECT id FROM races WHERE id = ?", (race_id,)).fetchone()
         if not race:
@@ -235,32 +241,70 @@ def create_app() -> FastAPI:
         if not file.filename:
             raise HTTPException(400, "No file")
 
-        suffix = Path(file.filename).suffix.lower()
+        settle_val: int | None = None
+        if settle.strip():
+            try:
+                settle_val = int(settle.strip())
+            except ValueError as exc:
+                raise HTTPException(400, "Settle must be a number") from exc
+
+        suffix = Path(file.filename).suffix.lower() or ".png"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=UPLOAD_ROOT) as tmp:
             shutil.copyfileobj(file.file, tmp)
             tmp_path = Path(tmp.name)
 
+        keep = ASSET_ROOT / f"race{race_id}_sectionals_{Path(file.filename).name}"
+        shutil.copy2(tmp_path, keep)
+
         try:
-            stats = import_sectional(conn, tmp_path)
+            stats = import_sectional(
+                conn,
+                keep,
+                horse_name=horse_name.strip() or None,
+                run_style=run_style.strip() or None,
+                settle=settle_val,
+            )
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(400, f"Could not import sectionals: {exc}") from exc
-        finally:
-            # keep a durable copy under assets for the race
-            keep = ASSET_ROOT / f"race{race_id}_sectionals_{Path(file.filename).name}"
-            shutil.copy2(tmp_path, keep)
+            # Still keep the raw screenshot attached so it isn't lost
             import_race_asset(
                 conn,
                 keep,
                 kind="sectionals",
-                note=f"sectional import: {stats.get('horse_name') or file.filename}",
+                note=f"screenshot saved (parse failed): {exc}",
                 race_id=race_id,
                 copy_into=None,
             )
+            return RedirectResponse(
+                f"/races/{race_id}?msg=Screenshot+saved+but+could+not+parse:+pick+the+horse+and+try+again",
+                status_code=303,
+            )
+
+        note_bits = [f"sectional: {stats.get('horse_name') or file.filename}"]
+        if stats.get("run_style"):
+            note_bits.append(str(stats["run_style"]))
+        if stats.get("manual"):
+            note_bits.append("manual/screenshot")
+        import_race_asset(
+            conn,
+            keep,
+            kind="sectionals",
+            note=" · ".join(note_bits),
+            race_id=race_id,
+            copy_into=None,
+        )
 
         horse = stats.get("horse_name") or "horse"
         rows = stats.get("rows", 0)
+        if rows:
+            msg = f"Sectionals imported for {horse} ({rows} runs)"
+        else:
+            msg = (
+                f"Screenshot saved for {horse}"
+                + (f" · {stats.get('run_style')}" if stats.get("run_style") else "")
+                + " (style saved; table OCR optional)"
+            )
         return RedirectResponse(
-            f"/races/{race_id}?msg=Sectionals+imported+for+{horse}+({rows}+runs)",
+            f"/races/{race_id}?msg=" + msg.replace(" ", "+"),
             status_code=303,
         )
 

@@ -54,7 +54,13 @@ def cmd_import_sectionals(args: argparse.Namespace) -> int:
         reports = import_sectionals_dir(conn, path)
         print(json.dumps({"ok": True, "type": "sectionals", "imports": reports}, indent=2))
     else:
-        stats = import_sectional(conn, path)
+        stats = import_sectional(
+            conn,
+            path,
+            horse_name=args.horse,
+            run_style=args.run_style,
+            settle=args.settle,
+        )
         print(json.dumps({"ok": True, "type": "sectional", **stats}, indent=2))
     return 0
 
@@ -317,6 +323,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_db_arg(p_is)
     p_is.add_argument("path", help="Image/text/json file or folder")
+    p_is.add_argument("--horse", help="Horse name (needed for screenshots without OCR)")
+    p_is.add_argument("--run-style", help='e.g. "Leader (Settle - 2)"')
+    p_is.add_argument("--settle", type=int, help="Settle position number")
     p_is.set_defaults(func=cmd_import_sectionals)
 
     p_asset = sub.add_parser(

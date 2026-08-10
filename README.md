@@ -44,7 +44,18 @@ Database: `data/racedna.db` (override with `--db` or `RACEDNA_DB`).
 python3 -m racedna backtest --track "Belmont Park" --date 2026-08-01 --top 1
 ```
 
+## Screenshot sectionals
+
+In the race page: upload the screenshot, **pick the horse**, and set run style / settle if you know it.
+
+OCR is optional. Without Tesseract the screenshot still saves and the horse’s run style is used in tips.
+
+```bash
+# optional — better table reading from screenshots
+brew install tesseract          # Mac
+python3 -m pip install -e ".[ocr]"
+```
+
 ## Optional
 
 - Punting Form API download: `python3 -m racedna download --date YYYY-MM-DD --import`
-- OCR for dense screenshots: install system Tesseract + `pip install -e ".[ocr]"` (JSON/TXT sidecars are more reliable)

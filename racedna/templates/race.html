@@ -96,11 +96,35 @@
 
     <form class="upload-panel" action="/races/{{ race.id }}/sectionals" method="post" enctype="multipart/form-data" style="box-shadow:none;">
       <h2 style="font-size:1.1rem;">Horse sectionals</h2>
-      <p>Screenshot, <code>.sectional.json</code>, or <code>.sectional.txt</code>.</p>
-      <label class="file">File
-        <input type="file" name="file" required />
+      <p>Drop a screenshot. Pick the horse (required for screenshots). Run style/settle help if OCR can’t read the table.</p>
+      <label class="file">Screenshot / file
+        <input type="file" name="file" accept="image/*,.png,.jpg,.jpeg,.webp,.json,.txt" required />
       </label>
-      <button type="submit">Import sectionals</button>
+      <label style="display:block; margin:0.75rem 0;">Horse
+        <select name="horse_name" required>
+          <option value="">Select horse…</option>
+          {% for r in runners %}
+          <option value="{{ r.horse_name }}">#{{ r.tab_no or '-' }} {{ r.horse_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label style="display:block; margin-bottom:0.75rem;">Run style
+        <select name="run_style">
+          <option value="">Unknown / leave blank</option>
+          <option value="Leader (Settle - 1)">Leader (Settle - 1)</option>
+          <option value="Leader (Settle - 2)">Leader (Settle - 2)</option>
+          <option value="Leader (Settle - 3)">Leader (Settle - 3)</option>
+          <option value="On Pace (Settle - 4)">On Pace (Settle - 4)</option>
+          <option value="On Pace Midfield (Settle - 6)">On Pace Midfield (Settle - 6)</option>
+          <option value="Midfield (Settle - 7)">Midfield (Settle - 7)</option>
+          <option value="Off Pace (Settle - 9)">Off Pace (Settle - 9)</option>
+          <option value="Back (Settle - 11)">Back (Settle - 11)</option>
+        </select>
+      </label>
+      <label style="display:block; margin-bottom:0.75rem;">Settle (optional)
+        <input type="text" name="settle" placeholder="e.g. 2" inputmode="numeric" />
+      </label>
+      <button type="submit">Save sectionals screenshot</button>
     </form>
 
     <h2 style="margin-top:1.5rem;">Attached</h2>
