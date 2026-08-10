@@ -12,3 +12,6 @@ data/puntingform.key
 data/api_key
 .env
 .DS_Store
+
+data/inbox/assets/*
+!data/inbox/assets/.gitkeep
