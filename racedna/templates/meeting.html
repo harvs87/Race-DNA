@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{{ meeting.track }} — RaceDNA{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>{{ meeting.track }}</h1>
+  <p>{{ meeting.meeting_date }} — open a race to attach bias/sectionals, or scan the tips below.</p>
+  <form method="get" style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:end; max-width:420px;">
+    <label>Going override
+      <input type="text" name="going" value="{{ going }}" placeholder="Soft / Good / Heavy" />
+    </label>
+    <button type="submit">Re-tip</button>
+    <a class="btn secondary" href="/">All meetings</a>
+  </form>
+</section>
+
+<section>
+  <h2 class="section-title">Races</h2>
+  <div class="race-grid">
+    {% for r in races %}
+    <a class="race-link" href="/races/{{ r.id }}{% if going %}?going={{ going }}{% endif %}">
+      <div class="race-no">R{{ r.race_number }}</div>
+      <div>
+        <strong>{{ r.name or ('Race ' ~ r.race_number) }}</strong>
+        <div class="meta">
+          {{ r.distance or '?' }}m
+          {% if r.track_condition %} · {{ r.track_condition }}{% endif %}
+          {% if r.class_text %} · {{ r.class_text }}{% endif %}
+        </div>
+      </div>
+      <div class="stats">
+        <span class="pill">{{ r.runners }} runners</span>
+        <span class="pill">{{ r.results }} results</span>
+        <span class="pill">{{ r.assets }} assets</span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section style="margin-top:2rem;">
+  <h2 class="section-title">Tips</h2>
+  <div class="tip-list">
+    {% for rn, rows in tips.items() %}
+    <div class="tip">
+      <div class="rank">Race {{ rn }}</div>
+      {% for t in rows %}
+      <div style="margin-top:0.45rem;">
+        <strong>#{{ t.tab_no or '-' }} {{ t.horse }}</strong>
+        <span class="meta">score {{ '%.1f'|format(t.score) }} · bar {{ t.barrier or '-' }}
+          {% if t.result_position %} · finished #{{ t.result_position }}{% endif %}
+        </span>
+        <ul>
+          {% for reason in t.reasons[:3] %}
+          <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty">No tips yet — import a meeting first.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

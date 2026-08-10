@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}RaceDNA{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/">Race<span>DNA</span></a>
+      <div class="tagline">Your meetings. Your results. Your tips.{% if version %} <span style="opacity:.55">v{{ version }}</span>{% endif %}</div>
+    </header>
+    {% if flash %}
+      <div class="flash">{{ flash }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>
