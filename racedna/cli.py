@@ -198,6 +198,22 @@ def cmd_tip(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    import os
+
+    import uvicorn
+
+    os.environ["RACEDNA_DB"] = str(Path(args.db))
+    print(f"RaceDNA web UI on http://{args.host}:{args.port}  (db={args.db})")
+    uvicorn.run(
+        "racedna.web:app",
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+    )
+    return 0
+
+
 def cmd_backtest(args: argparse.Namespace) -> int:
     conn = connect(args.db)
     tips = score_meeting(
@@ -331,6 +347,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_db_arg(p_list)
     p_list.add_argument("--json", action="store_true")
     p_list.set_defaults(func=cmd_list)
+
+    p_serve = sub.add_parser("serve", help="Run the simple upload/tip web UI")
+    _add_db_arg(p_serve)
+    p_serve.add_argument("--host", default="0.0.0.0")
+    p_serve.add_argument("--port", type=int, default=8000)
+    p_serve.add_argument("--reload", action="store_true")
+    p_serve.set_defaults(func=cmd_serve)
 
     p_tip = sub.add_parser("tip", help="Rank runners using past results + form (+ attached bias)")
     _add_db_arg(p_tip)

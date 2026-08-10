@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}RaceDNA{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Upload. Attach. Tip.</h1>
+  <p>Dump the meeting and the results into the database. For races you want to punt, stick in the sectional and bias screenshots. RaceDNA ranks from your history and form.</p>
+</section>
+
+<div class="upload-row">
+  <form class="upload-panel" action="/upload/meeting" method="post" enctype="multipart/form-data">
+    <h2>Meeting</h2>
+    <p>Punting Form style meeting / form CSV.</p>
+    <label class="file">CSV file
+      <input type="file" name="file" accept=".csv,text/csv" required />
+    </label>
+    <button type="submit">Upload meeting</button>
+  </form>
+
+  <form class="upload-panel" action="/upload/results" method="post" enctype="multipart/form-data">
+    <h2>Results</h2>
+    <p>Results CSV for the same meeting once it’s done — or historical days.</p>
+    <label class="file">CSV file
+      <input type="file" name="file" accept=".csv,text/csv" required />
+    </label>
+    <button type="submit">Upload results</button>
+  </form>
+</div>
+
+<section>
+  <h2 class="section-title">Meetings in the DB</h2>
+  {% if meetings %}
+  <div class="meeting-list">
+    {% for m in meetings %}
+    <a class="meeting-row" href="/meetings/{{ m.id }}">
+      <div>
+        <strong>{{ m.track }}</strong>
+        <div class="meta">{{ m.meeting_date }}</div>
+      </div>
+      <div class="stats">
+        <span class="pill">{{ m.races }} races</span>
+        <span class="pill">{{ m.runners }} runners</span>
+        <span class="pill">{{ m.results }} results</span>
+        <span class="pill">{{ m.assets }} assets</span>
+      </div>
+      <div class="meta">Open →</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">Nothing in here yet. Upload a meeting CSV to start.</p>
+  {% endif %}
+</section>
+{% endblock %}

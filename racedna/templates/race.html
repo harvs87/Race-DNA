@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}R{{ race.race_number }} {{ race.track }} — RaceDNA{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>R{{ race.race_number }} · {{ race.name or 'Race' }}</h1>
+  <p>{{ race.track }} · {{ race.meeting_date }}
+    {% if race.distance %} · {{ race.distance }}m{% endif %}
+    {% if race.track_condition %} · {{ race.track_condition }}{% endif %}
+  </p>
+  <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+    <a class="btn secondary" href="/meetings/{{ race.meeting_id }}">← Meeting</a>
+  </div>
+</section>
+
+<div class="two-col">
+  <section class="panel">
+    <h2>Tips for this race</h2>
+    {% if tips %}
+      {% for t in tips %}
+      <div class="tip">
+        <div class="rank">{{ loop.index }}. #{{ t.tab_no or '-' }} {{ t.horse }}</div>
+        <div class="meta">score {{ '%.1f'|format(t.score) }} · {{ t.jockey or '' }} · bar {{ t.barrier or '-' }}
+          {% if t.result_position %} · result #{{ t.result_position }} @ {{ t.result_price }}{% endif %}
+        </div>
+        <ul>
+          {% for reason in t.reasons[:5] %}
+          <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty">No runners to tip.</p>
+    {% endif %}
+
+    <h2 style="margin-top:1.75rem;">Field</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Horse</th>
+            <th>Jockey</th>
+            <th>Bar</th>
+            <th>Last10</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in runners %}
+          <tr>
+            <td>{{ r.tab_no or '-' }}</td>
+            <td>
+              <strong>{{ r.horse_name }}</strong>
+              {% if r.run_style %}<div class="meta">{{ r.run_style }}</div>{% endif %}
+            </td>
+            <td>{{ r.jockey or '' }}</td>
+            <td>{{ r.barrier or '' }}</td>
+            <td>{{ r.last10 or '' }}</td>
+            <td>
+              {% if r.result_position %}
+                #{{ r.result_position }}{% if r.result_price %} @ {{ r.result_price }}{% endif %}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <h2>Attach for this race</h2>
+    <p class="meta" style="margin-top:-0.35rem; margin-bottom:1rem;">
+      Bias screenshot, notes, or anything else for races you’re punting.
+    </p>
+
+    <form class="upload-panel" action="/races/{{ race.id }}/assets" method="post" enctype="multipart/form-data" style="box-shadow:none; margin-bottom:1rem;">
+      <label>Kind
+        <select name="kind">
+          <option value="bias">Bias</option>
+          <option value="sectionals">Sectionals</option>
+          <option value="form">Form</option>
+          <option value="notes">Notes</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
+      <label style="display:block; margin:0.75rem 0;">Screenshot
+        <input type="file" name="file" accept="image/*,.png,.jpg,.jpeg,.webp" />
+      </label>
+      <label style="display:block; margin-bottom:0.75rem;">Note
+        <textarea name="note" placeholder="e.g. rails + leaders"></textarea>
+      </label>
+      <button type="submit">Save asset</button>
+    </form>
+
+    <form class="upload-panel" action="/races/{{ race.id }}/sectionals" method="post" enctype="multipart/form-data" style="box-shadow:none;">
+      <h2 style="font-size:1.1rem;">Horse sectionals</h2>
+      <p>Screenshot, <code>.sectional.json</code>, or <code>.sectional.txt</code>.</p>
+      <label class="file">File
+        <input type="file" name="file" required />
+      </label>
+      <button type="submit">Import sectionals</button>
+    </form>
+
+    <h2 style="margin-top:1.5rem;">Attached</h2>
+    {% if assets %}
+      {% for a in assets %}
+      <div class="asset">
+        <span class="kind">{{ a.kind }}</span>
+        {% if a.note %}<div>{{ a.note }}</div>{% endif %}
+        {% if a.tags %}<div class="meta">tags: {{ a.tags }}</div>{% endif %}
+        {% if a.source_path %}<div class="meta">{{ a.source_path }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty">No screenshots or notes on this race yet.</p>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

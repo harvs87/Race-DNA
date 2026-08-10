@@ -185,7 +185,9 @@ MIGRATIONS = [
 
 
 def default_db_path() -> Path:
-    return Path("data/racedna.db")
+    import os
+
+    return Path(os.environ.get("RACEDNA_DB", "data/racedna.db"))
 
 
 def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
